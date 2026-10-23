@@ -360,19 +360,24 @@ class ShootViewModel {
                 .replacingOccurrences(of: "shooter", with: " ")
         }
 
-        // A pair is two targets, so "pair hit" and "pair lost" score the next two cells.
-        if phrase.contains("pair hit") {
+        // "Lost" is the usual clay call for a miss, so "miss", "missed" and "lost" all
+        // count as misses. A pair is two targets, so "pair hit", "pair lost",
+        // "lost pair" and similar score the next two cells.
+        let isPair = phrase.contains("pair")
+        let isHit = phrase.contains("hit")
+        let isMiss = Self.missWords.contains { phrase.contains($0) }
+
+        if isHit {
             addScore(1)
-            addScore(1)
-        } else if phrase.contains("pair miss") || phrase.contains("pair lost") {
+            if isPair { addScore(1) }
+        } else if isMiss {
             addScore(0)
-            addScore(0)
-        } else if phrase.contains("hit") {
-            addScore(1)
-        } else if phrase.contains("miss") {
-            addScore(0)
+            if isPair { addScore(0) }
         }
     }
+
+    /// Words that mean a target was missed.
+    private static let missWords = ["miss", "lost"]
 
     /// Finds a shooter mentioned in the phrase. Full names are tried first (longest
     /// first, so "john taylor" wins over "john"), then a first name on its own when
