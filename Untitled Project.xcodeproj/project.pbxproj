@@ -11,9 +11,9 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		000000000000000000000010 /* MyApp */ = {
+		000000000000000000000010 /* ClayShootScoreApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MyApp;
+			path = ClayShootScoreApp;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -30,7 +30,7 @@
 		000000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
-				000000000000000000000010 /* MyApp */,
+				000000000000000000000010 /* ClayShootScoreApp */,
 				000000000000000000000020 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -57,7 +57,7 @@
 			buildRules = (
 			);
 			fileSystemSynchronizedGroups = (
-				000000000000000000000010 /* MyApp */,
+				000000000000000000000010 /* ClayShootScoreApp */,
 			);
 			name = MyApp;
 			productName = MyApp;

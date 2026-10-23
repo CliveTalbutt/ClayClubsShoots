@@ -83,9 +83,21 @@ struct ScoreTableView: View {
         let isCurrentShooter = shooterIndex == vm.currentShooterIndex && !vm.isComplete
 
         return HStack(spacing: 8) {
-            Text(shooter.name.capitalized)
-                .fontWeight(isCurrentShooter ? .bold : .regular)
-                .frame(width: nameWidth, alignment: .leading)
+            // Clicking a name also makes that shooter current.
+            HStack(spacing: 4) {
+                Image(systemName: "arrowtriangle.right.fill")
+                    .font(.caption2)
+                    .foregroundStyle(Color.accentColor)
+                    .opacity(isCurrentShooter ? 1 : 0)
+                Text(shooter.name.capitalized)
+                    .fontWeight(isCurrentShooter ? .bold : .regular)
+                    .foregroundStyle(isCurrentShooter ? Color.accentColor : .primary)
+            }
+            .frame(width: nameWidth, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                vm.selectShooter(at: shooterIndex)
+            }
 
             ForEach(0..<standCount, id: \.self) { stand in
                 standCells(shooterIndex: shooterIndex, stand: stand)
@@ -100,8 +112,9 @@ struct ScoreTableView: View {
                     .frame(width: placeWidth)
             }
         }
-        .padding(.vertical, 2)
-        .background(isCurrentShooter ? Color.accentColor.opacity(0.08) : Color.clear)
+        .padding(.vertical, 4)
+        .background(isCurrentShooter ? Color.accentColor.opacity(0.15) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     /// The 10 target cells and stand total for one shooter on one stand.

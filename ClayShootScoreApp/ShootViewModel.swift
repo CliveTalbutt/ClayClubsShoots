@@ -189,6 +189,10 @@ class ShootViewModel {
         if isListening {
             stopListening()
         }
+        // Scoring always has a current shooter; default to the first on the list.
+        if mode == .scoring, currentShooterIndex == nil, !shooters.isEmpty {
+            selectShooter(at: 0)
+        }
         listeningMode = mode
         errorMessage = nil
         transcript = ""
@@ -335,18 +339,25 @@ class ShootViewModel {
 
     // MARK: - Command handling
 
-    private func handleSpeech(_ text: String) {
+    /// Applies a cumulative scoring transcript. Internal rather than private so the
+    /// command handling can be exercised without a microphone.
+    func handleSpeech(_ text: String) {
         // Only act on words that have arrived since the last time we processed the transcript.
         let words = text.split(separator: " ").map(String.init)
         guard words.count > processedWordCount else { return }
         let newWords = words[processedWordCount...]
         processedWordCount = words.count
 
-        let phrase = newWords.joined(separator: " ")
+        var phrase = newWords.joined(separator: " ")
 
-        if phrase.contains("shooter") {
-            selectShooter(from: phrase)
-            return
+        // Mentioning an existing shooter's name (with or without the word "shooter")
+        // switches scoring to that shooter. Any scoring words in the same phrase,
+        // such as "john hit", are still applied afterwards.
+        if let match = matchShooter(in: phrase) {
+            selectShooter(at: match.index)
+            phrase = phrase
+                .replacingOccurrences(of: match.matchedText, with: " ")
+                .replacingOccurrences(of: "shooter", with: " ")
         }
 
         // A pair is two targets, so "pair hit" and "pair lost" score the next two cells.
@@ -363,13 +374,54 @@ class ShootViewModel {
         }
     }
 
-    private func selectShooter(from text: String) {
-        let name = text.replacingOccurrences(of: "shooter", with: "")
-            .trimmingCharacters(in: .whitespaces)
+    /// Finds a shooter mentioned in the phrase. Full names are tried first (longest
+    /// first, so "john taylor" wins over "john"), then a first name on its own when
+    /// it belongs to exactly one shooter.
+    private func matchShooter(in phrase: String) -> (index: Int, matchedText: String)? {
+        let words = phrase.split(separator: " ").map(String.init)
 
-        if let index = shooters.firstIndex(where: { $0.name.lowercased() == name }) {
-            currentShooterIndex = index
-            currentTarget = 0
+        let byLength = shooters.indices.sorted { shooters[$0].name.count > shooters[$1].name.count }
+        for index in byLength {
+            let name = shooters[index].name.lowercased()
+            if !name.isEmpty, containsWholeWords(words, name.split(separator: " ").map(String.init)) {
+                return (index, name)
+            }
+        }
+
+        for word in words {
+            let candidates = shooters.indices.filter {
+                shooters[$0].name.lowercased().split(separator: " ").first.map(String.init) == word
+            }
+            if candidates.count == 1 {
+                return (candidates[0], word)
+            }
+        }
+
+        return nil
+    }
+
+    /// True if `sequence` appears as consecutive whole words inside `words`.
+    private func containsWholeWords(_ words: [String], _ sequence: [String]) -> Bool {
+        guard !sequence.isEmpty, words.count >= sequence.count else { return false }
+        for start in 0...(words.count - sequence.count)
+        where Array(words[start..<(start + sequence.count)]) == sequence {
+            return true
+        }
+        return false
+    }
+
+    /// Makes the given shooter current and resumes at their next unscored target
+    /// on the current stand, so switching between shooters never overwrites scores.
+    func selectShooter(at index: Int) {
+        guard shooters.indices.contains(index) else { return }
+        currentShooterIndex = index
+
+        let scores = shooters[index].scores
+        if scores.indices.contains(currentStand),
+           let next = scores[currentStand].firstIndex(where: { $0 < 0 }) {
+            currentTarget = next
+        } else {
+            currentTarget = Self.targetsPerStand
         }
     }
 
