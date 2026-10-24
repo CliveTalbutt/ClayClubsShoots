@@ -333,6 +333,14 @@ app.get('/results', needAuth, (req, res) => {
   res.render('results', { shoots, shoot, shooters });
 });
 
+// Cheap change fingerprint of this user's data, polled by public/live.js
+app.get('/live', needAuth, (req, res) => {
+  const uid = req.session.userId;
+  const s = db.prepare('SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m FROM shoots WHERE user_id = ?').get(uid);
+  const r = db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(r.score),0) AS t FROM results r JOIN shoots s ON s.id = r.shoot_id WHERE s.user_id = ?').get(uid);
+  res.set('Cache-Control', 'no-store').json({ v: `${s.n}:${s.m}:${r.n}:${r.t}` });
+});
+
 app.get('/leaderboard', needAuth, (req, res) => {
   const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 1);
   const cutoffDate = cutoff.toISOString().slice(0, 10);
