@@ -21,6 +21,9 @@ struct ScoreTableView: View {
     var vm: ShootViewModel
 
     @State private var scrollPosition = ScrollPosition()
+    /// The shooter whose email address is being edited, and the text typed so far.
+    @State private var emailEditID: Shooter.ID?
+    @State private var emailDraft = ""
     /// The part of the table content currently on screen, in content coordinates.
     @State private var visibleRect = CGRect.zero
     /// Where each shooter's row sits within the table content.
@@ -63,6 +66,23 @@ struct ScoreTableView: View {
     }
 
     var body: some View {
+        scrollingTable
+            .alert("Email address", isPresented: Binding(get: { emailEditID != nil }, set: { if !$0 { emailEditID = nil } })) {
+                TextField("name@example.com", text: $emailDraft)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Save") {
+                    if let id = emailEditID, let s = vm.shooters.first(where: { $0.id == id }) { vm.setEmail(emailDraft, for: s.name) }
+                    emailEditID = nil
+                }
+                Button("Cancel", role: .cancel) { emailEditID = nil }
+            } message: {
+                Text("Their results are emailed to them after the shoot is uploaded. Leave blank to remove.")
+            }
+    }
+
+    private var scrollingTable: some View {
         ScrollView([.horizontal, .vertical]) {
             VStack(alignment: .leading, spacing: 6) {
                 headerRow
@@ -192,11 +212,24 @@ struct ScoreTableView: View {
                     .fontWeight(isCurrentShooter ? .bold : .regular)
                     .foregroundStyle(isCurrentShooter ? Color.accentColor : .primary)
                     .lineLimit(1)
+                if vm.email(for: shooter.name) != nil {
+                    Image(systemName: "envelope.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(width: nameWidth, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture {
                 vm.selectShooter(at: shooterIndex)
+            }
+            .contextMenu {
+                Button {
+                    emailDraft = vm.email(for: shooter.name) ?? ""
+                    emailEditID = shooter.id
+                } label: {
+                    Label("Email address…", systemImage: "envelope")
+                }
             }
 
             ForEach(0..<standCount, id: \.self) { stand in

@@ -50,6 +50,23 @@ class ShootViewModel {
     private static let numberOfStandsKey = "numberOfStands"
     private static let venueKey = "shootVenue"
     private static let startKey = "shootStart"
+    private static let emailsKey = "shooterEmails"
+
+    /// Email addresses by lowercased shooter name, remembered between shoots.
+    private(set) var emails: [String: String] = (UserDefaults.standard.dictionary(forKey: "shooterEmails") as? [String: String]) ?? [:]
+
+    func email(for name: String) -> String? {
+        let e = emails[name.trimmingCharacters(in: .whitespaces).lowercased()]
+        return (e?.isEmpty ?? true) ? nil : e
+    }
+
+    /// Saves (or, when blank, removes) a shooter's email address.
+    func setEmail(_ email: String, for name: String) {
+        let key = name.trimmingCharacters(in: .whitespaces).lowercased()
+        let value = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty { emails[key] = nil } else { emails[key] = value }
+        UserDefaults.standard.set(emails, forKey: Self.emailsKey)
+    }
 
     /// Rounds a date down to the previous half hour.
     static func halfHour(_ date: Date) -> Date {

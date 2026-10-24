@@ -283,6 +283,7 @@ struct ContentView: View {
     private var uploadConfirmationMessage: String {
         let count = vm.shooters.count
         var text = "Upload \(count) shooter\(count == 1 ? "" : "s") from \"\(vm.shootName)\"\(vm.venue.isEmpty ? "" : " at \(vm.venue)") to the server? Uploading the same shoot again replaces its earlier results."
+        if vm.shooters.contains(where: { vm.email(for: $0.name) != nil }) { text += " Shooters with an email address will be emailed their results." }
         if vm.hasUnscoredTargets { text += " Some targets are not scored yet and will be uploaded as misses." }
         return text
     }

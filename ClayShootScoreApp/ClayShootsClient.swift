@@ -12,6 +12,7 @@ import CryptoKit
 nonisolated struct ShootUpload: Encodable, Sendable {
     nonisolated struct Entry: Encodable, Sendable {
         let name: String
+        let email: String?
         let scores: [Int]
     }
 
@@ -210,7 +211,7 @@ extension ShootViewModel {
             let scores = (0..<numberOfStands).map { stand in
                 shooter.scores.indices.contains(stand) ? min(shooter.standTotal(stand), targets) : 0
             }
-            return .init(name: name, scores: scores)
+            return .init(name: name, email: email(for: shooter.name), scores: scores)
         }
         let c = Calendar.current.dateComponents([.year, .month, .day], from: shootStart)
         let date = String(format: "%04d-%02d-%02d", c.year ?? 1970, c.month ?? 1, c.day ?? 1)
