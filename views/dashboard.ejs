@@ -3,12 +3,33 @@
 
 <section class="card">
   <h2>Subscription</h2>
-  <% if (active) { %>
-    <p><span class="badge ok">Active</span> Renews <%= new Date(user.sub_period_end * 1000).toLocaleDateString('en-GB') %> &middot; &pound;50 / year</p>
-    <form method="post" action="/billing/portal"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn secondary">Manage billing</button></form>
+  <% const msgs = { ok: ['ok', 'Payment received. Thank you!'], pending: ['warn', 'Payment started. Access will switch on as soon as the provider confirms it.'], failed: ['warn', 'Sorry, that payment could not be started or confirmed. Please try again or use another method.'], cancelled: ['warn', 'Payment cancelled.'] }; %>
+  <% if (payStatus && msgs[payStatus]) { %><p><span class="badge <%= msgs[payStatus][0] %>"><%= msgs[payStatus][1] %></span></p><% } %>
+  <% if (!payOptions.length) { %>
+    <p><span class="badge ok">Active</span> No payment provider is configured, so every account has full access.</p>
   <% } else { %>
-    <p><span class="badge warn">Inactive</span> Subscribe to upload and record shoots.</p>
-    <form method="post" action="/billing/checkout"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn">Subscribe &ndash; &pound;50 / year</button></form>
+    <% if (active) { %>
+      <p><span class="badge ok">Active</span> Paid until <%= new Date(user.sub_period_end * 1000).toLocaleDateString('en-GB') %></p>
+      <% if (hasPortal) { %><form method="post" action="/billing/portal"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn secondary">Manage card subscription</button></form><% } %>
+      <h3>Extend or renew</h3>
+    <% } else { %>
+      <p><span class="badge warn">Inactive</span> Choose a plan to upload and record shoots.</p>
+    <% } %>
+    <div class="plans">
+      <% payOptions.forEach(plan => { %>
+        <div class="plan">
+          <h3><%= plan.label %></h3>
+          <p class="plan-price"><strong><%= plan.price %></strong> <span class="muted"><%= plan.blurb %></span></p>
+          <% plan.providers.forEach(p => { %>
+            <form method="post" action="/billing/pay/<%= p.id %>">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <input type="hidden" name="plan" value="<%= plan.key %>">
+              <button class="btn <%= active ? 'secondary' : '' %> pay-btn">Pay with <%= p.name %></button>
+            </form>
+          <% }) %>
+        </div>
+      <% }) %>
+    </div>
   <% } %>
 </section>
 

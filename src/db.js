@@ -44,6 +44,25 @@ CREATE TABLE IF NOT EXISTS results (
   PRIMARY KEY (shoot_id, shooter, stand)
 );
 CREATE INDEX IF NOT EXISTS idx_results_shooter ON results(shooter);
+CREATE TABLE IF NOT EXISTS payments (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  plan TEXT NOT NULL,
+  provider_ref TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  meta TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (provider, provider_ref)
+);
+CREATE TABLE IF NOT EXISTS pay_links (
+  provider TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  plan TEXT,
+  PRIMARY KEY (provider, kind, external_id)
+);
 `);
 
 if (inMemory && process.env.SEED_EXAMPLE_DATA === '1') {

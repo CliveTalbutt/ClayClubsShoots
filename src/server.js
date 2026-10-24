@@ -16,7 +16,6 @@ for (const k of ['SESSION_SECRET', 'APP_ENCRYPTION_KEY']) {
 }
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const PROD = process.env.NODE_ENV === 'production';
-const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
 const encKey = Buffer.from(process.env.APP_ENCRYPTION_KEY, 'hex');
 
 // ---- helpers ----
@@ -54,9 +53,9 @@ const decodeId = (userId, token) => {
   } catch { return null; }
 };
 const hashKey = (k) => crypto.createHash('sha256').update(k).digest('hex');
-// With no Stripe key configured there is nothing to subscribe to, so every account is active.
+// With no payment provider configured there is nothing to subscribe to, so every account is active.
 const isActive = (u) =>
-  u && (!stripe || ['active', 'trialing'].includes(u.sub_status) && (u.sub_period_end || 0) * 1000 > Date.now());
+  u && (!payments.anyEnabled() || ['active', 'trialing'].includes(u.sub_status) && (u.sub_period_end || 0) * 1000 > Date.now());
 const regenerate = (req) => new Promise((res, rej) => req.session.regenerate((e) => (e ? rej(e) : res())));
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -71,25 +70,8 @@ app.use(helmet(PROD ? {} : {
 }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// ---- Stripe webhook (raw body, before JSON parsing) ----
-function syncSubscription(sub) {
-  const end = sub.current_period_end || sub.items?.data?.[0]?.current_period_end || null;
-  db.prepare('UPDATE users SET sub_status = ?, sub_period_end = ? WHERE stripe_customer_id = ?')
-    .run(sub.status, end, sub.customer);
-}
-app.post('/webhook/stripe', express.raw({ type: 'application/json' }), wrap(async (req, res) => {
-  if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) return res.sendStatus(503);
-  let event;
-  try {
-    event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET);
-  } catch { return res.sendStatus(400); }
-  if (event.type === 'checkout.session.completed' && event.data.object.subscription) {
-    syncSubscription(await stripe.subscriptions.retrieve(event.data.object.subscription));
-  } else if (event.type.startsWith('customer.subscription.')) {
-    syncSubscription(event.data.object);
-  }
-  res.sendStatus(200);
-}));
+const payments = require('./payments')({ db, baseUrl: BASE_URL, needAuth: (q, s, n) => needAuth(q, s, n), wrap });
+app.use('/webhook', payments.webhooks);
 
 // ---- JSON API for the iPhone app (bearer key, no cookies/CSRF) ----
 const apiLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true, legacyHeaders: false });
@@ -251,7 +233,7 @@ app.get('/dashboard', needAuth, (req, res) => {
     FROM shoots s LEFT JOIN results r ON r.shoot_id = s.id
     WHERE s.user_id = ? GROUP BY s.id ORDER BY s.shoot_date DESC, s.id DESC`).all(req.session.userId);
   const newKey = req.session.newKey; delete req.session.newKey;
-  res.render('dashboard', { shoots, newKey, baseUrl: BASE_URL });
+  res.render('dashboard', { shoots, newKey, baseUrl: BASE_URL, payOptions: payments.options(), payStatus: req.query.pay || null, hasPortal: payments.hasStripePortal && !!res.locals.user.stripe_customer_id });
 });
 
 // Minimum average % per class, highest first. Classified on the last 12 months, else all time.
@@ -417,27 +399,7 @@ app.post('/settings/api-key', needAuth, (req, res) => {
   res.redirect('/dashboard');
 });
 
-app.post('/billing/checkout', needAuth, wrap(async (req, res) => {
-  if (!stripe || !process.env.STRIPE_PRICE_ID) return res.status(503).send('Billing not configured');
-  const u = res.locals.user;
-  let customer = u.stripe_customer_id;
-  if (!customer) {
-    customer = (await stripe.customers.create({ email: u.email, name: u.club_name, metadata: { user_id: String(u.id) } })).id;
-    db.prepare('UPDATE users SET stripe_customer_id = ? WHERE id = ?').run(customer, u.id);
-  }
-  const s = await stripe.checkout.sessions.create({
-    mode: 'subscription', customer,
-    line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
-    success_url: `${BASE_URL}/dashboard`, cancel_url: `${BASE_URL}/dashboard`,
-  });
-  res.redirect(303, s.url);
-}));
-app.post('/billing/portal', needAuth, wrap(async (req, res) => {
-  const u = res.locals.user;
-  if (!stripe || !u.stripe_customer_id) return res.redirect('/dashboard');
-  const s = await stripe.billingPortal.sessions.create({ customer: u.stripe_customer_id, return_url: `${BASE_URL}/dashboard` });
-  res.redirect(303, s.url);
-}));
+app.use('/billing', payments.billing);
 
 app.use((err, req, res, next) => {
   console.error(err);

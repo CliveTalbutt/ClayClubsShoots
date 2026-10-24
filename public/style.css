@@ -57,3 +57,9 @@ footer{text-align:center;color:var(--muted);padding:24px}
 .leader-top { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
 .leader-crown { font-size: 3rem; line-height: 1; }
 .leader-top h2 { margin: 0; }
+
+.plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: .75rem; }
+.plan { border: 1px solid var(--line); border-radius: 10px; padding: 1rem; }
+.plan h3 { margin: 0 0 .25rem; }
+.plan-price { margin: 0 0 .75rem; }
+.pay-btn { display: block; width: 100%; margin-bottom: .5rem; text-align: left; }
