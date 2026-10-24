@@ -1,0 +1,52 @@
+<%- include('partials/head') %>
+<h1><%= user.club_name %></h1>
+
+<section class="card">
+  <h2>Subscription</h2>
+  <% if (active) { %>
+    <p><span class="badge ok">Active</span> Renews <%= new Date(user.sub_period_end * 1000).toLocaleDateString('en-GB') %> &middot; &pound;50 / year</p>
+    <form method="post" action="/billing/portal"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn secondary">Manage billing</button></form>
+  <% } else { %>
+    <p><span class="badge warn">Inactive</span> Subscribe to upload and record shoots.</p>
+    <form method="post" action="/billing/checkout"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn">Subscribe &ndash; &pound;50 / year</button></form>
+  <% } %>
+</section>
+
+<section class="card">
+  <h2>API key</h2>
+  <% if (newKey) { %>
+    <p>Copy this now &ndash; it won't be shown again:</p>
+    <pre><code><%= newKey %></code></pre>
+  <% } %>
+  <p class="muted">Send results with <code>POST <%= baseUrl %>/api/v1/shoots</code> and header <code>Authorization: Bearer &lt;key&gt;</code>. Generating a new key revokes the old one.</p>
+  <form method="post" action="/settings/api-key"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn secondary">Generate new API key</button></form>
+  <details>
+    <summary>JSON format</summary>
+<pre><code>{
+  "name": "Sunday Sporting",
+  "venue": "Green Valley CPSA",
+  "date": "2026-05-17",
+  "externalId": "optional-unique-id-from-app",
+  "stands": 6,
+  "targetsPerStand": 10,
+  "shooters": [
+    { "name": "A. Smith", "scores": [8, 9, 7, 10, 6, 8] }
+  ]
+}</code></pre>
+  </details>
+</section>
+
+<section class="card">
+  <div class="row"><h2>Shoots</h2><a class="btn small secondary" href="/compare">Compare shoots</a></div>
+  <% if (!shoots.length) { %><p class="muted">No shoots yet.</p><% } else { %>
+  <table>
+    <thead><tr><th>Date</th><th>Shoot</th><th>Venue</th><th>Stands</th><th>Shooters</th></tr></thead>
+    <tbody>
+    <% shoots.forEach(s => { %>
+      <tr><td><%= s.shoot_date %></td><td><a href="/shoots/<%= eid(s.id) %>"><%= s.name %></a></td><td><%= s.venue || '' %></td><td><%= s.stands %></td><td><%= s.shooters %></td></tr>
+    <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</section>
+<%- include('partials/foot') %>

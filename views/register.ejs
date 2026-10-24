@@ -1,0 +1,12 @@
+<%- include('partials/head') %>
+<form method="post" class="card narrow">
+  <h2>Create account</h2>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <input type="hidden" name="_csrf" value="<%= csrf %>">
+  <label>Club / organiser name<input name="club_name" required maxlength="120"></label>
+  <label>Email<input type="email" name="email" required autocomplete="email"></label>
+  <label>Password (12+ characters)<input type="password" name="password" required minlength="12" autocomplete="new-password"></label>
+  <button class="btn">Continue</button>
+  <p class="muted">You'll set up two-factor authentication next.</p>
+</form>
+<%- include('partials/foot') %>

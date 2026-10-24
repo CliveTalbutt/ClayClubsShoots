@@ -1,0 +1,9 @@
+<%- include('partials/head') %>
+<form method="post" class="card narrow">
+  <h2>Two-factor code</h2>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <input type="hidden" name="_csrf" value="<%= csrf %>">
+  <label>6-digit code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" required autofocus></label>
+  <button class="btn">Sign in</button>
+</form>
+<%- include('partials/foot') %>

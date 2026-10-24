@@ -1,0 +1,30 @@
+<%- include('partials/head') %>
+<h1>Leaderboard</h1>
+<p class="muted">Best average score over the last 12 months (since <%= since %>).</p>
+<% if (!board.length) { %>
+  <p class="muted">No results in the last 12 months.</p>
+<% } else { %>
+  <div class="card leader-top">
+    <div class="leader-crown">🥇</div>
+    <div>
+      <h2><%= board[0].name %></h2>
+      <p class="muted">Top shooter &middot; <%= board[0].avgPct.toFixed(1) %>% average over <%= board[0].shoots %> shoot<%= board[0].shoots === 1 ? '' : 's' %><% if (board[0].cpsa) { %> &middot; CPSA <%= board[0].cpsa.icon %> <%= board[0].cpsa.name %><% } %></p>
+    </div>
+  </div>
+  <table class="results-table leader-table">
+    <thead><tr><th>Place</th><th>Shooter</th><th>Avg %</th><th>Shoots</th><th>Total hits</th><th>CPSA Class</th></tr></thead>
+    <tbody>
+      <% const medals = ['🥇', '🥈', '🥉']; board.forEach(s => { %>
+        <tr>
+          <td><%= medals[s.place - 1] || s.place %></td>
+          <th scope="row"><%= s.name %></th>
+          <td><strong><%= s.avgPct.toFixed(1) %>%</strong></td>
+          <td><%= s.shoots %></td>
+          <td><%= s.hits %></td>
+          <td><%= s.cpsa ? s.cpsa.icon + ' ' + s.cpsa.name : '' %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+<% } %>
+<%- include('partials/foot') %>

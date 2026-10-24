@@ -1,0 +1,21 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Clay Shoots (in-memory database)",
+			"type": "shell",
+			"command": "DB_IN_MEMORY=1 SESSION_SECRET=$(openssl rand -hex 32) APP_ENCRYPTION_KEY=$(openssl rand -hex 32) npm start",
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Run Clay Shoots (sample in-memory data)",
+			"type": "shell",
+			"command": "PORT=3001 DB_IN_MEMORY=1 SEED_EXAMPLE_DATA=1 SESSION_SECRET=$(openssl rand -hex 32) APP_ENCRYPTION_KEY=$(openssl rand -hex 32) npm start",
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

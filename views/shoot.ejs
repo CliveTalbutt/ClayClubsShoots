@@ -1,0 +1,23 @@
+<%- include('partials/head') %>
+<div class="row">
+  <div><h1><%= shoot.name %></h1><p class="muted"><%= shoot.shoot_date %><%= shoot.venue ? ' · ' + shoot.venue : '' %> · <%= shoot.stands %> stands × <%= shoot.targets_per_stand %></p></div>
+  <form method="post" action="/shoots/<%= eid(shoot.id) %>/delete"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small danger">Delete</button></form>
+</div>
+<section class="card">
+  <table>
+    <thead><tr>
+      <th><a href="?sort=name">Shooter</a></th>
+      <% for (let i = 1; i <= shoot.stands; i++) { %><th class="num">S<%= i %></th><% } %>
+      <th class="num"><a href="?sort=total">Total / <%= max %></a></th>
+    </tr></thead>
+    <tbody>
+    <% shooters.forEach(s => { %>
+      <tr><td><%= s.name %></td>
+        <% s.scores.forEach(v => { %><td class="num"><%= v ?? '–' %></td><% }) %>
+        <td class="num"><strong><%= s.total %></strong></td></tr>
+    <% }) %>
+    </tbody>
+  </table>
+</section>
+<p><a href="/compare?ids=<%= eid(shoot.id) %>">Shooter stats for this shoot</a> &middot; <a href="/dashboard">Back</a></p>
+<%- include('partials/foot') %>

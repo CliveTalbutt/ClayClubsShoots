@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clay Shoots</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="nav">
+  <a class="brand" href="/">&#9678; Clay Shoots</a>
+  <nav>
+    <% if (user) { %>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/results">Results</a>
+      <a href="/compare">Compare</a>
+      <a href="/leaderboard">Leaderboard</a>
+      <form method="post" action="/logout" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="link">Sign out</button></form>
+    <% } else { %>
+      <a href="/login">Sign in</a>
+      <a class="btn small" href="/register">Create account</a>
+    <% } %>
+  </nav>
+</header>
+<main>

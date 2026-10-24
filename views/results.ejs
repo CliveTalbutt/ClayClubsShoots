@@ -1,0 +1,88 @@
+<%- include('partials/head') %>
+<h1>Results</h1>
+<form method="get" class="card" id="results-shoot-form">
+  <label for="results-shoot">Choose a shoot</label>
+  <select id="results-shoot" name="shoot" required>
+    <option value="">Select a shoot</option>
+    <% shoots.forEach(item => { %>
+      <option value="<%= eid(item.id) %>" <%= shoot && shoot.id === item.id ? 'selected' : '' %>><%= item.shoot_date %> &ndash; <%= item.name %><%= item.venue ? ` (${item.venue})` : '' %></option>
+    <% }) %>
+  </select>
+  <% if (!shoots.length) { %><p class="muted">No shoots yet. Add a shoot to view its results.</p><% } %>
+</form>
+
+<% if (shoot) { %>
+  <section class="card">
+    <div class="row">
+      <div>
+        <h2><%= shoot.name %></h2>
+        <p class="muted"><%= shoot.shoot_date %><%= shoot.venue ? ` · ${shoot.venue}` : '' %> · <%= shoot.stands %> stands × <%= shoot.targets_per_stand %> targets</p>
+      </div>
+      <div class="results-tools">
+        <label class="results-filter">Filter shooters
+          <input id="results-filter" type="search" placeholder="Search by name" autocomplete="off">
+        </label>
+        <% if (shooters.length) { %>
+        <details class="share-menu" id="share-menu">
+          <summary class="btn small secondary">Share</summary>
+          <div class="share-options" role="menu">
+            <button type="button" role="menuitem" data-share="csv">Spreadsheet (CSV)</button>
+            <button type="button" role="menuitem" data-share="email">Email</button>
+            <button type="button" role="menuitem" data-share="x">Social: X / Twitter</button>
+            <button type="button" role="menuitem" data-share="whatsapp">Social: WhatsApp</button>
+            <button type="button" role="menuitem" data-share="native" hidden>Social: more apps…</button>
+          </div>
+          <p class="muted share-note" id="share-note" aria-live="polite"></p>
+        </details>
+        <% } %>
+      </div>
+    </div>
+    <% if (!shooters.length) { %>
+      <p class="muted">No shooter results recorded for this shoot.</p>
+    <% } else { %>
+      <p class="muted" id="results-count" aria-live="polite" hidden>Showing <span id="results-visible-count"><%= shooters.length %></span> of <%= shooters.length %> shooters</p>
+      <table id="results-table" data-title="<%= shoot.name %>" data-date="<%= shoot.shoot_date %>" data-venue="<%= shoot.venue || '' %>">
+        <thead><tr>
+          <th scope="col" data-sort-column="0" data-sort-type="text" aria-sort="none"><button type="button" class="results-sort" data-sort-column="0">Shooter <span aria-hidden="true">↕</span></button></th>
+          <% for (let i = 1; i <= shoot.stands; i++) { %>
+            <th scope="col" class="num" data-sort-column="<%= i %>" data-sort-type="number" aria-sort="none"><button type="button" class="results-sort" data-sort-column="<%= i %>"><%= i %> <span aria-hidden="true">↕</span></button></th>
+          <% } %>
+          <th scope="col" class="num" data-sort-column="<%= shoot.stands + 1 %>" data-sort-type="number" aria-sort="descending"><button type="button" class="results-sort" data-sort-column="<%= shoot.stands + 1 %>">Total / <%= shoot.stands * shoot.targets_per_stand %> <span aria-hidden="true">↓</span></button></th>
+          <th scope="col" class="num" data-sort-column="<%= shoot.stands + 2 %>" data-sort-type="number" aria-sort="none"><button type="button" class="results-sort" data-sort-column="<%= shoot.stands + 2 %>">Avg % <span aria-hidden="true">↕</span></button></th>
+          <th scope="col" class="num" data-sort-column="<%= shoot.stands + 3 %>" data-sort-type="number" aria-sort="none"><button type="button" class="results-sort" data-sort-column="<%= shoot.stands + 3 %>">Place <span aria-hidden="true">↕</span></button></th>
+          <th scope="col" class="num" data-sort-column="<%= shoot.stands + 4 %>" data-sort-type="number" aria-sort="none"><button type="button" class="results-sort" data-sort-column="<%= shoot.stands + 4 %>">CPSA Class <span aria-hidden="true">↕</span></button></th>
+        </tr></thead>
+        <tbody>
+          <% shooters.forEach(shooter => { %>
+            <tr data-shooter="<%= shooter.name.toLowerCase() %>">
+              <th scope="row" class="shooter-name" tabindex="0" data-name="<%= shooter.name %>" data-stats="<%= JSON.stringify(shooter.stats) %>"><%= shooter.name %></th>
+              <% shooter.scores.forEach(score => { %>
+                <td class="num" data-sort-value="<%= score ?? '' %>">
+                  <% if (score == null) { %>
+                    <span aria-label="No score recorded">–</span>
+                  <% } else { %>
+                    <span class="hit-score" aria-label="<%= score %> hits"><%= score %></span>
+                  <% } %>
+                </td>
+              <% }) %>
+              <td class="num" data-sort-value="<%= shooter.total %>"><strong><%= shooter.total %></strong></td>
+              <% const shot = shooter.scores.filter((v) => v != null).length; const avg = shot ? (100 * shooter.total) / (shot * shoot.targets_per_stand) : null; %>
+              <td class="num" data-sort-value="<%= avg == null ? '' : avg.toFixed(2) %>"><%= avg == null ? '–' : avg.toFixed(1) + '%' %></td>
+              <td class="num place" data-sort-value="<%= shooter.place %>" data-export="<%= shooter.place %>">
+                <% const medal = ['🥇', '🥈', '🥉'][shooter.place - 1]; %>
+                <% if (medal) { %><span class="medal" role="img" aria-label="<%= ['1st', '2nd', '3rd'][shooter.place - 1] %> place" title="<%= ['1st', '2nd', '3rd'][shooter.place - 1] %> place"><%= medal %></span><% } %>
+              </td>
+              <% const cls = shooter.stats.cpsa; %>
+              <td class="num" data-sort-value="<%= cls ? cls.rank : '' %>" data-export="<%= cls ? cls.name : '' %>">
+                <% if (cls) { %><span class="class-badge" title="CPSA class from <%= cls.basis %> average"><%= cls.icon %> <%= cls.name %></span><% } else { %>–<% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </section>
+<% } %>
+<dialog id="shooter-dialog" class="shooter-dialog" aria-live="polite"></dialog>
+<script src="/results.js" defer></script>
+<%- include('partials/foot') %>

@@ -1,0 +1,10 @@
+<%- include('partials/head') %>
+<form method="post" class="card narrow">
+  <h2>Sign in</h2>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <input type="hidden" name="_csrf" value="<%= csrf %>">
+  <label>Email<input type="email" name="email" required autocomplete="email"></label>
+  <label>Password<input type="password" name="password" required autocomplete="current-password"></label>
+  <button class="btn">Continue</button>
+</form>
+<%- include('partials/foot') %>
