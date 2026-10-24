@@ -63,3 +63,8 @@ footer{text-align:center;color:var(--muted);padding:24px}
 .plan h3 { margin: 0 0 .25rem; }
 .plan-price { margin: 0 0 .75rem; }
 .pay-btn { display: block; width: 100%; margin-bottom: .5rem; text-align: left; }
+
+.social-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+.social-actions form { margin: 0; }
+.social-fields label, #social-form > label { display: block; margin-top: .6rem; }
+.social-fields input { display: block; width: 100%; }

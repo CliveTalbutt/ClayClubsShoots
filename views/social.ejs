@@ -1,0 +1,63 @@
+<%- include('partials/head') %>
+<h1>Social media</h1>
+<p class="muted">Connect zero or more accounts. When a shoot is uploaded from the iPhone app, its results are posted to every connected account that is switched on. Posts contain text only (no link), because results pages need a login.</p>
+
+<% if (msg) { %><p><span class="badge ok"><%= msg %></span></p><% } %>
+<% if (err) { %><p><span class="badge warn"><%= err %></span></p><% } %>
+
+<section class="card">
+  <h2>Connected accounts</h2>
+  <% if (!accounts.length) { %>
+    <p class="muted">None yet. Results are not posted anywhere.</p>
+  <% } else { %>
+    <table class="results-table social-table">
+      <thead><tr><th>Account</th><th>Platform</th><th>Status</th><th>Last attempt</th><th></th></tr></thead>
+      <tbody>
+        <% accounts.forEach(a => { %>
+          <tr>
+            <th scope="row"><%= a.label %></th>
+            <td><%= a.platformName %></td>
+            <td><span class="badge <%= a.enabled ? 'ok' : 'warn' %>"><%= a.enabled ? 'On' : 'Off' %></span></td>
+            <td><%= a.last_status || 'Never' %><% if (a.last_at) { %> <span class="muted">(<%= a.last_at %> UTC)</span><% } %></td>
+            <td class="social-actions">
+              <form method="post" action="/social/<%= a.id %>/test"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small secondary">Send test</button></form>
+              <form method="post" action="/social/<%= a.id %>/toggle"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small secondary"><%= a.enabled ? 'Turn off' : 'Turn on' %></button></form>
+              <form method="post" action="/social/<%= a.id %>/delete"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small secondary">Remove</button></form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+</section>
+
+<% if (accounts.length < max) { %>
+<section class="card">
+  <h2>Connect an account</h2>
+  <form method="post" action="/social/add" id="social-form" autocomplete="off">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <label for="social-platform">Platform</label>
+    <select id="social-platform" name="platform">
+      <% Object.entries(platforms).forEach(([key, p]) => { %><option value="<%= key %>"><%= p.name %></option><% }) %>
+    </select>
+    <label for="social-label">Name (optional)</label>
+    <input id="social-label" name="label" maxlength="60" placeholder="e.g. Club Discord">
+    <% Object.entries(platforms).forEach(([key, p], i) => { %>
+      <div class="social-fields" data-platform="<%= key %>" <%= i ? 'hidden' : '' %>>
+        <p class="muted"><%= p.hint %></p>
+        <% p.fields.forEach(f => { %>
+          <label><%= f.label %>
+            <input name="f_<%= f.key %>" type="<%= f.secret ? 'password' : 'text' %>" maxlength="500" autocomplete="off" <%= i ? 'disabled' : '' %>>
+          </label>
+        <% }) %>
+      </div>
+    <% }) %>
+    <button class="btn">Connect</button>
+  </form>
+  <p class="muted">Credentials are encrypted before they are stored and are never shown again.</p>
+</section>
+<% } else { %>
+  <p class="muted">You have connected the maximum of <%= max %> accounts.</p>
+<% } %>
+<script src="/social.js" defer></script>
+<%- include('partials/foot') %>

@@ -55,6 +55,18 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (provider, provider_ref)
 );
+CREATE TABLE IF NOT EXISTS social_accounts (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  label TEXT NOT NULL,
+  config TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_status TEXT,
+  last_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_social_user ON social_accounts(user_id);
 CREATE TABLE IF NOT EXISTS pay_links (
   provider TEXT NOT NULL,
   kind TEXT NOT NULL,

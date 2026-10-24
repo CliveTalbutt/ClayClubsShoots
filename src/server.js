@@ -72,6 +72,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const payments = require('./payments')({ db, baseUrl: BASE_URL, needAuth: (q, s, n) => needAuth(q, s, n), wrap });
 app.use('/webhook', payments.webhooks);
+const social = require('./social')({ db, encrypt, decrypt, needAuth: (q, r, n) => needAuth(q, r, n), wrap });
 
 // ---- JSON API for the iPhone app (bearer key, no cookies/CSRF) ----
 const apiLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true, legacyHeaders: false });
@@ -121,6 +122,7 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
       for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(r.lastInsertRowid, s.name.trim(), i + 1, sc));
       return r.lastInsertRowid;
     })();
+    if (b.postToSocial !== false) social.postShoot(user.id, id);
     res.status(201).json({ id, url: `${BASE_URL}/shoots/${encodeId(user.id, id)}` });
   } catch (e) {
     if (String(e.code).startsWith('SQLITE_CONSTRAINT')) return res.status(409).json({ error: 'duplicate_externalId' });
@@ -400,6 +402,7 @@ app.post('/settings/api-key', needAuth, (req, res) => {
 });
 
 app.use('/billing', payments.billing);
+app.use('/social', social.router);
 
 app.use((err, req, res, next) => {
   console.error(err);
