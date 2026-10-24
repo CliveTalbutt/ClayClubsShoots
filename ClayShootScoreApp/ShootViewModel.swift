@@ -37,6 +37,9 @@ class ShootViewModel {
     static let maxShooters = 20
     /// How long the speaker must pause between names before a name is added.
     static let nameGap: Duration = .milliseconds(1400)
+    /// Name entry ends by itself after this long without any new speech.
+    static let nameIdleLimit: Duration = .seconds(4)
+    private var nameIdleTask: Task<Void, Never>?
     /// How long the speaker must pause after a "clear …" command before it is carried out.
     static let commandGap: Duration = .milliseconds(1200)
     /// How long newly heard scoring words are held so a phrase such as "pair hit"
@@ -333,11 +336,21 @@ class ShootViewModel {
         guard !isFull else { return }
         isAddingShooter = true
         pendingShooterName = ""
+        restartNameIdleTimer()
         startListening(mode: .addingShooter)
     }
 
     /// Adds the pending name (spoken or typed) as a new shooter and keeps listening
     /// for the next one.
+    private func restartNameIdleTimer() {
+        nameIdleTask?.cancel()
+        nameIdleTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.nameIdleLimit)
+            guard !Task.isCancelled, let self, self.isAddingShooter else { return }
+            self.finishAddingShooters()
+        }
+    }
+
     func confirmPendingShooter() {
         nameCommitTask?.cancel()
         nameCommitTask = nil
@@ -357,6 +370,8 @@ class ShootViewModel {
 
     /// Adds any name still pending, then goes back to listening for scores.
     func finishAddingShooters() {
+        nameIdleTask?.cancel()
+        nameIdleTask = nil
         nameCommitTask?.cancel()
         nameCommitTask = nil
 
@@ -941,6 +956,7 @@ class ShootViewModel {
     private func handleNameSpeech(_ text: String, isFinal: Bool) {
         let words = text.split(separator: " ").map(String.init)
         latestWordCount = words.count
+        if words.count > processedWordCount { restartNameIdleTimer() }
 
         var newWords = words.count > processedWordCount ? Array(words[processedWordCount...]) : []
         // People often say "shooter John" or "add shooter John"; keep just the name.
