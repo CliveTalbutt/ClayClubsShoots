@@ -259,8 +259,7 @@ app.post('/2fa/verify', authLimiter, wrap(async (req, res) => {
 
 app.post('/logout', (req, res) => req.session.destroy(() => { res.clearCookie('cs.sid'); res.redirect('/'); }));
 
-app.get('/account', needAuth, (req, res) => {
-  const u = res.locals.user;
+function accountData(u) {
   const paymentsOn = payments.anyEnabled();
   const end = u.sub_period_end ? u.sub_period_end * 1000 : null;
   let state;
@@ -270,8 +269,35 @@ app.get('/account', needAuth, (req, res) => {
   else state = { label: 'Inactive', cls: 'warn', note: 'No plan yet. Choose one on the Dashboard to record shoots.' };
   const lastPayment = db.prepare("SELECT provider, plan, created_at FROM payments WHERE user_id = ? AND status = 'paid' ORDER BY id DESC LIMIT 1").get(u.id);
   const counts = db.prepare('SELECT COUNT(*) AS shoots FROM shoots WHERE user_id = ?').get(u.id);
-  res.render('account', { acct: u, state, paymentsOn, lastPayment, counts, hasKey: !!u.api_key_hash, hasPortal: payments.hasStripePortal && !!u.stripe_customer_id });
+  return { state, paymentsOn, lastPayment, counts, hasKey: !!u.api_key_hash, hasPortal: payments.hasStripePortal && !!u.stripe_customer_id };
+}
+app.get('/account', needAuth, (req, res) => {
+  const u = res.locals.user;
+  res.render('account', { msg: req.query.saved ? 'Changes saved.' : null, error: null, form: null, acct: u, ...accountData(u) });
 });
+
+app.post('/account', needAuth, authLimiter, wrap(async (req, res) => {
+  const u = res.locals.user;
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const club = String(req.body.club_name || '').trim();
+  let error = null;
+  if (!club || club.length > 120) error = 'Enter your club or organiser name.';
+  else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200) error = 'Enter a valid email.';
+  else if (email !== u.email) {
+    if (!(await bcrypt.compare(String(req.body.password || ''), u.password_hash))) error = 'Enter your current password to change your email.';
+    else if (db.prepare('SELECT 1 FROM users WHERE lower(email) = ? AND id <> ?').get(email, u.id)) error = 'That email address cannot be used.';
+  }
+  if (error) {
+    return res.status(400).render('account', { msg: null, error, form: { email, club_name: club }, acct: u, ...(await accountData(u)) });
+  }
+  try {
+    db.prepare('UPDATE users SET email = ?, club_name = ? WHERE id = ?').run(email, club, u.id);
+  } catch (e) {
+    if (!/UNIQUE/.test(e.message)) throw e;
+    return res.status(400).render('account', { msg: null, error: 'That email address cannot be used.', form: { email, club_name: club }, acct: u, ...(await accountData(u)) });
+  }
+  res.redirect('/account?saved=1');
+}));
 
 app.get('/dashboard', needAuth, (req, res) => {
   const shoots = db.prepare(`

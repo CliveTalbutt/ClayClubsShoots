@@ -3,7 +3,15 @@
 
 <section class="card">
   <h2>Signed in as</h2>
-  <p><strong><%= acct.email %></strong></p>
+  <% if (msg) { %><p><span class="badge ok"><%= msg %></span></p><% } %>
+  <% if (error) { %><p><span class="badge warn"><%= error %></span></p><% } %>
+  <form method="post" action="/account">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <label>Email <input type="email" name="email" maxlength="200" required value="<%= form ? form.email : acct.email %>"></label>
+    <label>Club / organiser name <input type="text" name="club_name" maxlength="120" required value="<%= form ? form.club_name : acct.club_name %>"></label>
+    <label>Current password <span class="muted">(only needed to change email)</span> <input type="password" name="password" autocomplete="current-password" maxlength="128"></label>
+    <button class="btn small">Save changes</button>
+  </form>
   <p class="muted"><%= acct.club_name %> &middot; member since <%= String(acct.created_at).slice(0, 10) %> &middot; <%= counts.shoots %> shoot<%= counts.shoots === 1 ? '' : 's' %> recorded</p>
 </section>
 
