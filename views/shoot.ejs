@@ -12,7 +12,7 @@
     </tr></thead>
     <tbody>
     <% shooters.forEach(s => { %>
-      <tr><td><%= s.name %></td>
+      <tr><td><span<%- shooterAttrs(s.name) %>><%= s.name %></span></td>
         <% s.scores.forEach(v => { %><td class="num"><%= v ?? '–' %></td><% }) %>
         <td class="num"><strong><%= s.total %></strong></td></tr>
     <% }) %>

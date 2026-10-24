@@ -55,7 +55,7 @@
         <tbody>
           <% shooters.forEach(shooter => { %>
             <tr data-shooter="<%= shooter.name.toLowerCase() %>">
-              <th scope="row" class="shooter-name" tabindex="0" data-name="<%= shooter.name %>" data-stats="<%= JSON.stringify(shooter.stats) %>"><%= shooter.name %></th>
+              <th scope="row"<%- shooterAttrs(shooter.name) %>><%= shooter.name %></th>
               <% shooter.scores.forEach(score => { %>
                 <td class="num" data-sort-value="<%= score ?? '' %>">
                   <% if (score == null) { %>
@@ -83,6 +83,5 @@
     <% } %>
   </section>
 <% } %>
-<dialog id="shooter-dialog" class="shooter-dialog" aria-live="polite"></dialog>
 <script src="/results.js" defer></script>
 <%- include('partials/foot') %>

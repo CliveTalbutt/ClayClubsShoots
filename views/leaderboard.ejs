@@ -7,7 +7,7 @@
   <div class="card leader-top">
     <div class="leader-crown">🥇</div>
     <div>
-      <h2><%= board[0].name %></h2>
+      <h2><span<%- shooterAttrs(board[0].name) %>><%= board[0].name %></span></h2>
       <p class="muted">Top shooter &middot; <%= board[0].avgPct.toFixed(1) %>% average over <%= board[0].shoots %> shoot<%= board[0].shoots === 1 ? '' : 's' %><% if (board[0].cpsa) { %> &middot; CPSA <%= board[0].cpsa.icon %> <%= board[0].cpsa.name %><% } %></p>
     </div>
   </div>
@@ -17,7 +17,7 @@
       <% const medals = ['🥇', '🥈', '🥉']; board.forEach(s => { %>
         <tr>
           <td><%= medals[s.place - 1] || s.place %></td>
-          <th scope="row"><%= s.name %></th>
+          <th scope="row"><span<%- shooterAttrs(s.name) %>><%= s.name %></span></th>
           <td><strong><%= s.avgPct.toFixed(1) %>%</strong></td>
           <td><%= s.shoots %></td>
           <td><%= s.hits %></td>

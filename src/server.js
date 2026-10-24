@@ -254,6 +254,36 @@ const classify = (stats) => {
   return { name: c.name, icon: c.icon, rank: CPSA_CLASSES.indexOf(c), basis: basis === stats.last12 ? 'last 12 months' : 'all time' };
 };
 
+// Lazily computed per-request hover stats, exposed to views as shooterAttrs(name).
+app.use((req, res, next) => {
+  let stats;
+  res.locals.shooterAttrs = (name) => {
+    if (!req.session?.userId) return '';
+    if (!stats) {
+      const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 1);
+      const cutoffDate = cutoff.toISOString().slice(0, 10);
+      const history = db.prepare(`SELECT r.shooter, s.shoot_date, SUM(r.score) AS total, s.stands * s.targets_per_stand AS possible
+        FROM results r JOIN shoots s ON s.id = r.shoot_id WHERE s.user_id = ? GROUP BY r.shooter, s.id`).all(req.session.userId);
+      const summarise = (rows) => ({
+        shoots: rows.length,
+        avgScore: rows.length ? rows.reduce((n, r) => n + r.total, 0) / rows.length : null,
+        avgPct: rows.length ? (100 * rows.reduce((n, r) => n + r.total, 0)) / rows.reduce((n, r) => n + r.possible, 0) : null,
+      });
+      stats = new Map();
+      for (const shooter of new Set(history.map((h) => h.shooter))) {
+        const mine = history.filter((h) => h.shooter === shooter);
+        const s = { allTime: summarise(mine), last12: summarise(mine.filter((h) => h.shoot_date >= cutoffDate)) };
+        s.cpsa = classify(s);
+        stats.set(shooter, s);
+      }
+    }
+    const s = stats.get(name);
+    return s ? ` class="shooter-name" tabindex="0" data-name="${escapeAttr(name)}" data-stats="${escapeAttr(JSON.stringify(s))}"` : '';
+  };
+  next();
+});
+const escapeAttr = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 app.get('/results', needAuth, (req, res) => {
   const shoots = db.prepare(
     'SELECT id, name, venue, shoot_date FROM shoots WHERE user_id = ? ORDER BY shoot_date DESC, id DESC'
