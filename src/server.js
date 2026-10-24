@@ -94,6 +94,7 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
   const str = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
   if (!str(b.name, 120)) errors.push('name required');
   if (b.venue != null && !str(b.venue, 120)) errors.push('venue invalid');
+  if (b.time != null && !(typeof b.time === 'string' && /^([01]\d|2[0-3]):(00|30)$/.test(b.time))) errors.push('time must be HH:MM on the hour or half hour');
   if (typeof b.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(b.date) || isNaN(Date.parse(b.date))) errors.push('date must be YYYY-MM-DD');
   if (!Number.isInteger(b.stands) || b.stands < 1 || b.stands > 20) errors.push('stands must be an integer 1-20');
   const tps = b.targetsPerStand ?? 10;
@@ -118,8 +119,8 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
       ? db.prepare('SELECT id FROM shoots WHERE user_id = ? AND external_id = ?').get(user.id, b.externalId) : null;
     if (existing) {
       db.transaction(() => {
-        db.prepare('UPDATE shoots SET name = ?, venue = ?, shoot_date = ?, stands = ?, targets_per_stand = ? WHERE id = ?')
-          .run(b.name.trim(), b.venue?.trim() ?? null, b.date, b.stands, tps, existing.id);
+        db.prepare('UPDATE shoots SET name = ?, venue = ?, shoot_date = ?, shoot_time = ?, stands = ?, targets_per_stand = ? WHERE id = ?')
+          .run(b.name.trim(), b.venue?.trim() ?? null, b.date, b.time ?? null, b.stands, tps, existing.id);
         db.prepare('DELETE FROM results WHERE shoot_id = ?').run(existing.id);
         const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score) VALUES (?,?,?,?)');
         for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(existing.id, s.name.trim(), i + 1, sc));
@@ -128,8 +129,8 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
     }
     const id = db.transaction(() => {
       const r = db.prepare(
-        'INSERT INTO shoots (user_id, external_id, name, venue, shoot_date, stands, targets_per_stand) VALUES (?,?,?,?,?,?,?)'
-      ).run(user.id, b.externalId ?? null, b.name.trim(), b.venue?.trim() ?? null, b.date, b.stands, tps);
+        'INSERT INTO shoots (user_id, external_id, name, venue, shoot_date, shoot_time, stands, targets_per_stand) VALUES (?,?,?,?,?,?,?,?)'
+      ).run(user.id, b.externalId ?? null, b.name.trim(), b.venue?.trim() ?? null, b.date, b.time ?? null, b.stands, tps);
       const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score) VALUES (?,?,?,?)');
       for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(r.lastInsertRowid, s.name.trim(), i + 1, sc));
       return r.lastInsertRowid;
@@ -159,6 +160,7 @@ app.use((req, res, next) => {
   res.locals.user = req.session.userId
     ? db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId) : null;
   res.locals.active = isActive(res.locals.user);
+  res.locals.when = (s) => s.shoot_date + (s.shoot_time ? ` ${s.shoot_time}` : '');
   res.locals.eid = (id) => encodeId(req.session.userId, id);
   res.locals.error = null;
   if (req.method === 'POST') {
@@ -245,7 +247,7 @@ app.get('/dashboard', needAuth, (req, res) => {
   const shoots = db.prepare(`
     SELECT s.*, COUNT(DISTINCT r.shooter) AS shooters, COALESCE(SUM(r.score),0) AS total
     FROM shoots s LEFT JOIN results r ON r.shoot_id = s.id
-    WHERE s.user_id = ? GROUP BY s.id ORDER BY s.shoot_date DESC, s.id DESC`).all(req.session.userId);
+    WHERE s.user_id = ? GROUP BY s.id ORDER BY s.shoot_date DESC, s.shoot_time DESC, s.id DESC`).all(req.session.userId);
   const newKey = req.session.newKey; delete req.session.newKey;
   res.render('dashboard', { shoots, newKey, baseUrl: BASE_URL, payOptions: payments.options(), payStatus: req.query.pay || null, hasPortal: payments.hasStripePortal && !!res.locals.user.stripe_customer_id });
 });
@@ -298,7 +300,7 @@ const escapeAttr = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;
 
 app.get('/results', needAuth, (req, res) => {
   const shoots = db.prepare(
-    'SELECT id, name, venue, shoot_date FROM shoots WHERE user_id = ? ORDER BY shoot_date DESC, id DESC'
+    'SELECT id, name, venue, shoot_date, shoot_time FROM shoots WHERE user_id = ? ORDER BY shoot_date DESC, shoot_time DESC, id DESC'
   ).all(req.session.userId);
   let shoot = null;
   let shooters = [];
@@ -391,7 +393,7 @@ app.post('/shoots/:token/delete', needAuth, (req, res) => {
 });
 
 app.get('/compare', needAuth, (req, res) => {
-  const all = db.prepare('SELECT id, name, shoot_date, targets_per_stand, stands FROM shoots WHERE user_id = ? ORDER BY shoot_date, id').all(req.session.userId);
+  const all = db.prepare('SELECT id, name, shoot_date, shoot_time, targets_per_stand, stands FROM shoots WHERE user_id = ? ORDER BY shoot_date, shoot_time, id').all(req.session.userId);
   let ids = [].concat(req.query.ids || []).map((t) => decodeId(req.session.userId, t)).filter(Number.isInteger);
   const owned = new Set(all.map((s) => s.id));
   ids = ids.filter((i) => owned.has(i));

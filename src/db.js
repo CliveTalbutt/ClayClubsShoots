@@ -110,4 +110,9 @@ if (inMemory && process.env.SEED_EXAMPLE_DATA === '1') {
   console.log(`Sample data login: sample@clayshoots.local / ${password}`);
 }
 
+// Shoot start time (HH:MM, 30-minute resolution); added after first release
+if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'shoot_time'").get()) {
+  db.exec('ALTER TABLE shoots ADD COLUMN shoot_time TEXT');
+}
+
 module.exports = db;

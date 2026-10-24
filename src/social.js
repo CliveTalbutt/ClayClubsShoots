@@ -147,7 +147,7 @@ module.exports = function createSocial({ db, encrypt, decrypt, needAuth, wrap })
       return `${medals[place - 1] ?? `${place}.`} ${r.shooter} – ${r.total}/${r.stands * shoot.targets_per_stand} (${pct.toFixed(1)}%)`;
     });
     if (rows.length > 10) lines.push(`…and ${rows.length - 10} more`);
-    const head = `🎯 ${shoot.name} – ${shoot.shoot_date}${shoot.venue ? ` at ${shoot.venue}` : ''}`;
+    const head = `🎯 ${shoot.name} – ${shoot.shoot_date}${shoot.shoot_time ? ` ${shoot.shoot_time}` : ''}${shoot.venue ? ` at ${shoot.venue}` : ''}`;
     return [head, '', ...lines, ...(club ? ['', club] : [])].join('\n');
   }
 

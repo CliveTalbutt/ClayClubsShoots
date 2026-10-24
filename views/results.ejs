@@ -5,7 +5,7 @@
   <select id="results-shoot" name="shoot" required>
     <option value="">Select a shoot</option>
     <% shoots.forEach(item => { %>
-      <option value="<%= eid(item.id) %>" <%= shoot && shoot.id === item.id ? 'selected' : '' %>><%= item.shoot_date %> &ndash; <%= item.name %><%= item.venue ? ` (${item.venue})` : '' %></option>
+      <option value="<%= eid(item.id) %>" <%= shoot && shoot.id === item.id ? 'selected' : '' %>><%= when(item) %> &ndash; <%= item.name %><%= item.venue ? ` (${item.venue})` : '' %></option>
     <% }) %>
   </select>
   <% if (!shoots.length) { %><p class="muted">No shoots yet. Add a shoot to view its results.</p><% } %>
@@ -16,7 +16,7 @@
     <div class="row">
       <div>
         <h2><%= shoot.name %></h2>
-        <p class="muted"><%= shoot.shoot_date %><%= shoot.venue ? ` · ${shoot.venue}` : '' %> · <%= shoot.stands %> stands × <%= shoot.targets_per_stand %> targets</p>
+        <p class="muted"><%= when(shoot) %><%= shoot.venue ? ` · ${shoot.venue}` : '' %> · <%= shoot.stands %> stands × <%= shoot.targets_per_stand %> targets</p>
       </div>
       <div class="results-tools">
         <label class="results-filter">Filter shooters
@@ -41,7 +41,7 @@
       <p class="muted">No shooter results recorded for this shoot.</p>
     <% } else { %>
       <p class="muted" id="results-count" aria-live="polite" hidden>Showing <span id="results-visible-count"><%= shooters.length %></span> of <%= shooters.length %> shooters</p>
-      <table id="results-table" data-title="<%= shoot.name %>" data-date="<%= shoot.shoot_date %>" data-venue="<%= shoot.venue || '' %>">
+      <table id="results-table" data-title="<%= shoot.name %>" data-date="<%= when(shoot) %>" data-venue="<%= shoot.venue || '' %>">
         <thead><tr>
           <th scope="col" data-sort-column="0" data-sort-type="text" aria-sort="none"><button type="button" class="results-sort" data-sort-column="0">Shooter <span aria-hidden="true">↕</span></button></th>
           <% for (let i = 1; i <= shoot.stands; i++) { %>
