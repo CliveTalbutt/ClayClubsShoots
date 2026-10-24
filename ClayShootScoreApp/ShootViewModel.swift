@@ -49,6 +49,25 @@ class ShootViewModel {
     private static let shootNameKey = "shootName"
     private static let numberOfStandsKey = "numberOfStands"
     private static let venueKey = "shootVenue"
+    private static let startKey = "shootStart"
+
+    /// Rounds a date down to the previous half hour.
+    static func halfHour(_ date: Date) -> Date {
+        let cal = Calendar.current
+        var c = cal.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        c.minute = (c.minute ?? 0) < 30 ? 0 : 30
+        return cal.date(from: c) ?? date
+    }
+
+    /// When the shoot starts, to a 30 minute resolution. A saved value from an earlier
+    /// day is replaced by the current half hour when the app starts.
+    var shootStart: Date {
+        didSet {
+            let rounded = Self.halfHour(shootStart)
+            if rounded != shootStart { shootStart = rounded; return }
+            UserDefaults.standard.set(shootStart, forKey: Self.startKey)
+        }
+    }
 
     /// Where the shoot takes place; uploaded to the server with the results.
     var venue: String {
@@ -73,6 +92,8 @@ class ShootViewModel {
     }
 
     init() {
+        let saved = UserDefaults.standard.object(forKey: Self.startKey) as? Date
+        shootStart = (saved.map { Calendar.current.isDateInToday($0) } ?? false) ? saved! : Self.halfHour(.now)
         venue = UserDefaults.standard.string(forKey: Self.venueKey) ?? "West Peckham Gun Club"
         shootName = UserDefaults.standard.string(forKey: Self.shootNameKey) ?? "West Peckham Shoot"
         let savedStands = UserDefaults.standard.integer(forKey: Self.numberOfStandsKey)
@@ -83,7 +104,7 @@ class ShootViewModel {
 
     /// The full heading, e.g. "West Peckham Shoot - 23 October 2026".
     var title: String {
-        let today = Date.now.formatted(date: .long, time: .omitted)
+        let today = shootStart.formatted(date: .long, time: .shortened)
         let name = shootName.trimmingCharacters(in: .whitespaces)
         return name.isEmpty ? today : "\(name) - \(today)"
     }
@@ -278,7 +299,7 @@ class ShootViewModel {
     /// A sensible default file name for the exported workbook.
     var exportFileName: String {
         let name = shootName.trimmingCharacters(in: .whitespaces)
-        let date = Date.now.formatted(.iso8601.year().month().day())
+        let date = shootStart.formatted(.iso8601.year().month().day())
         return (name.isEmpty ? "Shoot" : name) + " " + date
     }
 

@@ -19,6 +19,7 @@ nonisolated struct ShootUpload: Encodable, Sendable {
     let name: String
     let venue: String?
     let date: String
+    let time: String
     let stands: Int
     let targetsPerStand: Int
     let shooters: [Entry]
@@ -185,7 +186,7 @@ extension ShootViewModel {
     /// Stable id for a shoot (name, venue and today's date) so uploading it again
     /// replaces the earlier results on the server instead of adding a duplicate.
     var shootIdentity: String {
-        let c = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: shootStart)
         let key = [shootName, venue, "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"]
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.joined(separator: "|")
         return SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -211,7 +212,7 @@ extension ShootViewModel {
             }
             return .init(name: name, scores: scores)
         }
-        let c = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: shootStart)
         let date = String(format: "%04d-%02d-%02d", c.year ?? 1970, c.month ?? 1, c.day ?? 1)
         let name = shootName.trimmingCharacters(in: .whitespacesAndNewlines)
         return ShootUpload(
@@ -219,6 +220,7 @@ extension ShootViewModel {
             name: String((name.isEmpty ? "Shoot" : name).prefix(120)),
             venue: venue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : String(venue.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120)),
             date: date,
+            time: String(format: "%02d:%02d", Calendar.current.component(.hour, from: shootStart), Calendar.current.component(.minute, from: shootStart)),
             stands: numberOfStands,
             targetsPerStand: targets,
             shooters: entries

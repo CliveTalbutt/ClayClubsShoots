@@ -370,9 +370,10 @@ struct ContentView: View {
                 .font(isCompact ? .caption : .subheadline)
                 .foregroundStyle(.secondary)
 
-            Text(Date.now.formatted(date: .long, time: .omitted))
+            DatePicker("Date and time", selection: $vm.shootStart, displayedComponents: [.date, .hourAndMinute])
+                .labelsHidden()
                 .font(isCompact ? .caption2 : .subheadline)
-                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
