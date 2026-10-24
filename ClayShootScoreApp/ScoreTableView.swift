@@ -297,12 +297,19 @@ struct ScoreTableView: View {
         }
     }
 
-    /// Tapping a cell cycles it between hit and miss so scores can be corrected by hand.
+    /// Tapping a cell cycles it from not shot (-) to a hit (tick) to a miss
+    /// (cross) and back to not shot, so scores can be corrected by hand.
     private func toggleScore(shooterIndex: Int, stand: Int, target: Int, current: Int) {
         guard vm.shooters.indices.contains(shooterIndex),
               vm.shooters[shooterIndex].scores.indices.contains(stand),
               vm.shooters[shooterIndex].scores[stand].indices.contains(target) else { return }
-        vm.shooters[shooterIndex].scores[stand][target] = current == 1 ? 0 : 1
+        let next: Int
+        switch current {
+        case 1: next = 0        // tick -> cross
+        case 0: next = -1       // cross -> not shot
+        default: next = 1       // not shot -> tick
+        }
+        vm.shooters[shooterIndex].scores[stand][target] = next
     }
 }
 

@@ -97,6 +97,21 @@ class ShootViewModel {
     private(set) var listeningMode: ListeningMode = .scoring
     /// The most recent transcription heard from the microphone, for on-screen feedback.
     var transcript = ""
+    /// Goes up every time the recogniser hears new words, so the microphone
+    /// symbol can bounce in time with speech.
+    private(set) var heardWordCount = 0
+    /// True for a moment after words are heard, so the microphone symbol can
+    /// light up while someone is speaking.
+    private(set) var isHearingSpeech = false
+    private var hearingTask: Task<Void, Never>?
+    /// How long after the last words the microphone stays lit.
+    private static let hearingHold: Duration = .milliseconds(900)
+
+    /// True while the app is in the background and must not use the microphone.
+    private var isInBackground = false
+    /// Tries listening again after a failure, so listening comes back by itself.
+    private var retryTask: Task<Void, Never>?
+    private static let retryDelay: Duration = .seconds(10)
     /// A human-readable description of the last failure, if any.
     var errorMessage: String? {
         didSet {
@@ -291,7 +306,7 @@ class ShootViewModel {
         }
     }
 
-    /// Adds any name still pending, then stops listening for names.
+    /// Adds any name still pending, then goes back to listening for scores.
     func finishAddingShooters() {
         nameCommitTask?.cancel()
         nameCommitTask = nil
@@ -299,11 +314,12 @@ class ShootViewModel {
         let name = pendingShooterName.trimmingCharacters(in: .whitespacesAndNewlines)
         isAddingShooter = false
         pendingShooterName = ""
-        stopListening()
 
         if !name.isEmpty {
             addShooter(named: name)
         }
+        // The microphone stays on; only the vocabulary changes back to scoring.
+        startListening(mode: .scoring)
     }
 
     func addShooter(named name: String) {
@@ -370,8 +386,18 @@ class ShootViewModel {
         startListening(mode: .scoring)
     }
 
+    /// Makes sure the microphone is on, for when the app appears or comes back
+    /// to the foreground. Does nothing if listening is already under way.
+    func resumeListening() {
+        isInBackground = false
+        guard !isListening, !isStartingSession else { return }
+        startListening(mode: isAddingShooter ? .addingShooter : .scoring)
+    }
+
     private func startListening(mode: ListeningMode) {
-        guard !isStartingSession else { return }
+        guard !isStartingSession, !isInBackground else { return }
+        retryTask?.cancel()
+        retryTask = nil
         // Scoring always has a current shooter; default to the first on the list.
         if mode == .scoring, currentShooterIndex == nil, !shooters.isEmpty {
             selectShooter(at: 0)
@@ -419,7 +445,8 @@ class ShootViewModel {
                 // nearly always reports itself unavailable there.
                 errorMessage = "Speech recognition is not available in the iOS Simulator. Run the app on an iPhone to use voice scoring."
                 #else
-                errorMessage = "Speech recognition is not available right now. Check that Siri or Dictation is enabled in Settings and that the device is online, then press Start Listening again."
+                errorMessage = "Speech recognition is not available right now. Check that Siri or Dictation is enabled in Settings and that the device is online. Listening will retry shortly, or tap the microphone."
+                scheduleListeningRetry()
                 #endif
                 return
             }
@@ -430,6 +457,7 @@ class ShootViewModel {
                 // Release anything that did get set up before the failure.
                 stopAudioEngine()
                 errorMessage = Self.describeMicrophoneFailure(error)
+                scheduleListeningRetry()
                 return
             }
 
@@ -444,6 +472,9 @@ class ShootViewModel {
         listeningGeneration += 1
         silenceCheckTask?.cancel()
         silenceCheckTask = nil
+        hearingTask?.cancel()
+        hearingTask = nil
+        isHearingSpeech = false
         endRecognitionSession()
         cancelPendingClear()
         cancelPendingScores()
@@ -453,16 +484,42 @@ class ShootViewModel {
 
     /// Releases the microphone when the app leaves the foreground, so Siri,
     /// dictation and other apps can use it. Any name still being taken is added
-    /// first. Listening does not resume by itself; a message says what happened.
+    /// first. Listening starts again by itself when the app comes back.
     func stopListeningForBackground() {
+        isInBackground = true
+        retryTask?.cancel()
+        retryTask = nil
         guard isListening || isStartingSession || isAddingShooter else { return }
         if isAddingShooter {
             finishAddingShooters()
-        } else {
-            stopListening()
         }
+        stopListening()
         Self.logger.info("Listening stopped because the app left the foreground")
-        errorMessage = "Listening stopped while the app was in the background. Press Start Listening to carry on."
+    }
+
+    /// Tries to start listening again after a short wait, so a passing problem
+    /// such as the recogniser being briefly unavailable heals itself.
+    private func scheduleListeningRetry() {
+        retryTask?.cancel()
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.retryDelay)
+            guard !Task.isCancelled, let self else { return }
+            self.retryTask = nil
+            self.resumeListening()
+        }
+    }
+
+    /// Records that the recogniser has just heard words, driving the microphone
+    /// animation, and lets it go quiet again once speech stops.
+    private func noteSpeechHeard() {
+        heardWordCount += 1
+        isHearingSpeech = true
+        hearingTask?.cancel()
+        hearingTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.hearingHold)
+            guard !Task.isCancelled, let self else { return }
+            self.isHearingSpeech = false
+        }
     }
 
     /// Makes sure the microphone is released if the app is quit while listening.
@@ -604,7 +661,7 @@ class ShootViewModel {
             }
 
             Self.logger.error("Still only silence after rebuilding the microphone")
-            self.errorMessage = "The microphone is only picking up silence. Check that it works in another app such as Voice Memos, then stop and start listening again."
+            self.errorMessage = "The microphone is only picking up silence. Check that it works in another app such as Voice Memos, then tap the microphone to try again."
         }
     }
 
@@ -620,6 +677,7 @@ class ShootViewModel {
             let failure = Self.describeMicrophoneFailure(error)
             stopListening()
             errorMessage = failure
+            scheduleListeningRetry()
             return
         }
         beginRecognitionSession(with: recognizer)
@@ -685,6 +743,9 @@ class ShootViewModel {
                     Self.logger.debug("Heard \"\(text, privacy: .public)\" final=\(result.isFinal)")
                     if !text.isEmpty {
                         self.sessionHeardSpeech = true
+                        if text != self.transcript {
+                            self.noteSpeechHeard()
+                        }
                     }
                     self.transcript = text
                     switch self.listeningMode {
@@ -745,6 +806,7 @@ class ShootViewModel {
             if quickFailures >= Self.quickFailureLimit {
                 errorMessage = Self.describe(error)
                 stopListening()
+                scheduleListeningRetry()
                 return
             }
         } else {
@@ -792,6 +854,7 @@ class ShootViewModel {
             stopAudioEngine()
             errorMessage = Self.describeMicrophoneFailure(error)
             stopListening()
+            scheduleListeningRetry()
             return
         }
         beginRecognitionSession(with: recognizer)
@@ -875,13 +938,13 @@ class ShootViewModel {
         guard nsError.domain == "kAFAssistantErrorDomain" else { return error.localizedDescription }
         switch nsError.code {
         case 1101, 1107:
-            return "Speech recognition failed on this device. Check that Siri & Dictation are enabled in Settings and that English dictation is downloaded, then press Start Listening again."
+            return "Speech recognition failed on this device. Check that Siri & Dictation are enabled in Settings and that English dictation is downloaded. Listening will retry shortly."
         case 216:
-            return "Dictation is turned off. Enable it in Settings > General > Keyboard, then press Start Listening again."
+            return "Dictation is turned off. Enable it in Settings > General > Keyboard. Listening will retry shortly."
         case 1110:
-            return "No speech was heard. Press Start Listening to try again."
+            return "No speech was heard. Listening will retry shortly."
         default:
-            return "Speech recognition stopped (error \(nsError.code)). Press Start Listening to try again."
+            return "Speech recognition stopped (error \(nsError.code)). Listening will retry shortly."
         }
     }
 
@@ -1334,12 +1397,8 @@ class ShootViewModel {
         if currentTarget >= Self.targetsPerStand {
             advanceToNextShooter()
         }
-
-        // Nothing is left to score, so give the microphone back straight away.
-        if isComplete, isListening {
-            stopListening()
-            errorMessage = "Shoot complete. Listening has stopped."
-        }
+        // Listening carries on after the last target so "clear …" commands can
+        // still correct a result.
     }
 
     /// Moves scoring on to the next unscored target. The current stand is finished

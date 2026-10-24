@@ -101,7 +101,7 @@ struct VoiceCommandsHelpView: View {
             Label("Voice Commands", systemImage: "waveform")
                 .font(.title3.weight(.semibold))
 
-            Text("Press Start Listening, then say any of these. Words are matched by sound, so small mishearings are fine.")
+            Text("The app is always listening. Say any of these; words are matched by sound, so small mishearings are fine.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

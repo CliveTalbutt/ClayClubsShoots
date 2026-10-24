@@ -82,16 +82,26 @@ struct ContentView: View {
             .padding(.vertical, isCompact ? 8 : 20)
             .animation(.snappy, value: vm.isAddingShooter)
             .animation(.snappy, value: vm.isComplete)
-            .onAppear { isScoreTableFocused = true }
+            .onAppear {
+                isScoreTableFocused = true
+                // Listening is always on: start as soon as the app is showing.
+                vm.resumeListening()
+            }
             // Once names have been entered, hand focus back so scoring keys work.
             .onChange(of: vm.isAddingShooter) { _, isAdding in
                 if !isAdding { isScoreTableFocused = true }
             }
             // Release the microphone whenever the app leaves the foreground so
-            // Siri, dictation and other apps are never left without it.
+            // Siri, dictation and other apps are never left without it, and take
+            // it back as soon as the app returns.
             .onChange(of: scenePhase) { _, phase in
-                if phase == .background {
+                switch phase {
+                case .background:
                     vm.stopListeningForBackground()
+                case .active:
+                    vm.resumeListening()
+                default:
+                    break
                 }
             }
             #if os(macOS)
@@ -164,7 +174,6 @@ struct ContentView: View {
                     .labelStyle(.titleAndIcon)
             }
             .help("Choose how many stands are in the shoot")
-            .disabled(vm.isListening)
         }
 
         ToolbarSpacer(.fixed)
@@ -202,7 +211,6 @@ struct ContentView: View {
                 exportButton
 
                 standsPicker
-                    .disabled(vm.isListening)
 
                 Button {
                     isShowingHelp = true
@@ -225,21 +233,29 @@ struct ContentView: View {
         .disabled(vm.isAddingShooter || vm.isComplete || vm.isFull)
     }
 
+    /// Shows that the app is always listening. The microphone bounces every time
+    /// words are heard and lights up while someone is speaking. If listening has
+    /// stopped because of a problem, tapping it tries again straight away.
     private var listenButton: some View {
         Button {
-            if vm.isListening {
-                vm.stopListening()
-            } else {
-                vm.startListening()
-            }
+            vm.resumeListening()
         } label: {
-            Label(vm.isListening ? "Stop Listening" : "Start Listening",
-                  systemImage: vm.isListening ? "stop.fill" : "mic.fill")
+            Label(vm.isListening ? "Listening" : "Not Listening",
+                  systemImage: vm.isListening ? "mic.fill" : "mic.slash.fill")
+                .symbolEffect(.bounce, value: vm.heardWordCount)
+                .contentTransition(.symbolEffect(.replace))
         }
-        .help(vm.isListening ? "Stop listening for scores" : "Listen for spoken scores")
+        .help(vm.isListening ? "Listening for spoken scores and commands" : "Listening has stopped. Tap to try again")
         .buttonStyle(.glassProminent)
-        .tint(vm.isListening ? .red : .accentColor)
-        .disabled(vm.isAddingShooter || vm.shooters.isEmpty)
+        .tint(micTint)
+        .animation(.easeOut(duration: 0.2), value: vm.isHearingSpeech)
+    }
+
+    /// Green while words are being heard, the accent colour while idle but
+    /// listening, and grey when listening has stopped.
+    private var micTint: Color {
+        if vm.isHearingSpeech { return .green }
+        return vm.isListening ? .accentColor : .gray
     }
 
     private var exportButton: some View {
@@ -330,8 +346,10 @@ struct ContentView: View {
 
     private var addShooterMicIcon: some View {
         Image(systemName: "mic.fill")
-            .foregroundStyle(.red)
+            .foregroundStyle(vm.isHearingSpeech ? .green : .red)
             .symbolEffect(.pulse, isActive: vm.isListening)
+            .symbolEffect(.bounce, value: vm.heardWordCount)
+            .animation(.easeOut(duration: 0.2), value: vm.isHearingSpeech)
     }
 
     private var addShooterPrompt: some View {
