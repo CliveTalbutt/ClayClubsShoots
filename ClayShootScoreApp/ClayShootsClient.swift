@@ -6,7 +6,6 @@
 
 import Foundation
 import Security
-import CryptoKit
 
 /// The body accepted by `POST /api/v1/shoots`.
 nonisolated struct ShootUpload: Encodable, Sendable {
@@ -23,6 +22,8 @@ nonisolated struct ShootUpload: Encodable, Sendable {
     let time: String
     let stands: Int
     let targetsPerStand: Int
+    /// False while the shoot is still being scored; the server emails and posts only when true.
+    let complete: Bool
     let shooters: [Entry]
 }
 
@@ -184,13 +185,9 @@ final class ClayShootsSettings {
 }
 
 extension ShootViewModel {
-    /// Stable id for a shoot (name, venue and today's date) so uploading it again
-    /// replaces the earlier results on the server instead of adding a duplicate.
-    var shootIdentity: String {
-        let c = Calendar.current.dateComponents([.year, .month, .day], from: shootStart)
-        let key = [shootName, venue, "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.joined(separator: "|")
-        return SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    /// True once at least one target has been scored.
+    var hasAnyScore: Bool {
+        shooters.contains { $0.scores.contains { $0.contains { $0 >= 0 } } }
     }
 
     /// Builds the API payload from the current scoresheet. Targets not yet shot
@@ -224,6 +221,7 @@ extension ShootViewModel {
             time: String(format: "%02d:%02d", Calendar.current.component(.hour, from: shootStart), Calendar.current.component(.minute, from: shootStart)),
             stands: numberOfStands,
             targetsPerStand: targets,
+            complete: isComplete,
             shooters: entries
         )
     }

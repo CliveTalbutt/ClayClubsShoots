@@ -127,6 +127,10 @@ class ShootViewModel {
     }
 
     var shooters: [Shooter] = []
+
+    /// Identifies this shoot on the server so every live upload replaces the previous one.
+    /// A new one is made at launch and whenever the shoot is cleared and started again.
+    private(set) var shootSessionId = UUID().uuidString
     var currentShooterIndex: Int? = nil
     var currentStand = 0
     var currentTarget = 0   // 0–9
@@ -400,6 +404,7 @@ class ShootViewModel {
 
     /// Removes every shooter and starts the shoot again from the first stand.
     func removeAllShooters() {
+        shootSessionId = UUID().uuidString
         shooters.removeAll()
         currentShooterIndex = nil
         currentStand = 0

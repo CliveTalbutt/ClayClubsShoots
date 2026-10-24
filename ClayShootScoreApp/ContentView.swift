@@ -15,8 +15,6 @@ struct ContentView: View {
     @State private var exportMessage: String?
     @State private var isShowingHelp = false
     @State private var isShowingSettings = false
-    @State private var isConfirmingUpload = false
-    @State private var isUploading = false
     @State private var serverSettings = ClayShootsSettings()
 
     /// Keyboard focus sits on the score table so the Y and X keys score the
@@ -90,6 +88,7 @@ struct ContentView: View {
                 vm.resumeListening()
             }
             // Once names have been entered, hand focus back so scoring keys work.
+            .task(id: liveSignature) { await syncLive() }
             .onChange(of: vm.isAddingShooter) { _, isAdding in
                 if !isAdding { isScoreTableFocused = true }
             }
@@ -132,12 +131,6 @@ struct ContentView: View {
             SendToServerView(settings: serverSettings)
                 .presentationDetents([.medium, .large])
         }
-        .confirmationDialog("Upload to Server", isPresented: $isConfirmingUpload, titleVisibility: .visible) {
-            Button("Upload") { Task { await uploadToServer() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(uploadConfirmationMessage)
-        }
     }
 
     /// The help sheet binding, which only ever reads true on compact screens so
@@ -158,7 +151,6 @@ struct ContentView: View {
         ToolbarItemGroup {
             addShootersButton
             listenButton
-            sendButton
             serverSettingsButton
         }
 
@@ -206,8 +198,6 @@ struct ContentView: View {
             listenButton
 
             Menu {
-                sendButton
-
                 serverSettingsButton
 
                 standsPicker
@@ -258,20 +248,6 @@ struct ContentView: View {
         return vm.isListening ? .accentColor : .gray
     }
 
-    private var sendButton: some View {
-        Button {
-            if serverSettings.client == nil {
-                isShowingSettings = true
-            } else {
-                isConfirmingUpload = true
-            }
-        } label: {
-            Label("Upload to Server", systemImage: "icloud.and.arrow.up")
-        }
-        .disabled(vm.shooters.isEmpty || isUploading)
-        .help("Upload the scores to your Clay Shoots website")
-    }
-
     private var serverSettingsButton: some View {
         Button {
             isShowingSettings = true
@@ -280,29 +256,46 @@ struct ContentView: View {
         }
     }
 
-    private var uploadConfirmationMessage: String {
-        let count = vm.shooters.count
-        var text = "Upload \(count) shooter\(count == 1 ? "" : "s") from \"\(vm.shootName)\"\(vm.venue.isEmpty ? "" : " at \(vm.venue)") to the server? Uploading the same shoot again replaces its earlier results."
-        if vm.shooters.contains(where: { vm.email(for: $0.name) != nil }) { text += " Shooters with an email address will be emailed their results." }
-        if vm.hasUnscoredTargets { text += " Some targets are not scored yet and will be uploaded as misses." }
-        return text
+    /// Changes whenever anything that is uploaded changes, so the task below
+    /// restarts (and so debounces) on every score, name or setting change.
+    private var liveSignature: String {
+        guard serverSettings.client != nil, vm.hasAnyScore,
+              let upload = vm.makeUpload(externalId: vm.shootSessionId),
+              let data = try? JSONEncoder().encode(upload) else { return "" }
+        return String(decoding: data, as: UTF8.self)
     }
 
-    private func uploadToServer() async {
-        guard let client = serverSettings.client, let upload = vm.makeUpload(externalId: vm.shootIdentity) else {
-            exportMessage = ClayShootsError.notConfigured.localizedDescription
+    /// Sends the current scoresheet to the server shortly after the last change,
+    /// and retries if the connection fails. The server replaces the earlier
+    /// version of the same shoot, and emails and posts only once it is complete.
+    private func syncLive() async {
+        guard !liveSignature.isEmpty else {
+            exportMessage = serverSettings.client == nil ? "Live upload is off: add the server in Server Settings." : nil
             return
         }
-        isUploading = true
-        exportMessage = "Uploading…"
-        defer { isUploading = false }
-        do {
-            _ = try await client.send(upload)
-            exportMessage = "Uploaded \(upload.shooters.count) shooters to the server."
-        } catch ClayShootsError.server(409) {
-            exportMessage = "This shoot was already uploaded."
-        } catch {
-            exportMessage = "Upload failed. " + error.localizedDescription
+        guard let client = serverSettings.client, let upload = vm.makeUpload(externalId: vm.shootSessionId) else { return }
+        try? await Task.sleep(for: .seconds(2))
+        var delay = 10
+        while !Task.isCancelled {
+            do {
+                _ = try await client.send(upload)
+                exportMessage = "Live: \(upload.complete ? "shoot complete and" : "scores") synced at \(Date.now.formatted(date: .omitted, time: .shortened))"
+                return
+            } catch ClayShootsError.invalidKey {
+                exportMessage = "Live upload stopped: the API key was rejected."
+                return
+            } catch ClayShootsError.subscriptionRequired {
+                exportMessage = "Live upload stopped: the account needs a subscription."
+                return
+            } catch ClayShootsError.validation(let details) {
+                exportMessage = "Live upload rejected: " + details.joined(separator: ", ")
+                return
+            } catch {
+                if Task.isCancelled { return }
+                exportMessage = "Live upload failed, retrying…"
+                try? await Task.sleep(for: .seconds(delay))
+                delay = min(delay * 2, 60)
+            }
         }
     }
 
