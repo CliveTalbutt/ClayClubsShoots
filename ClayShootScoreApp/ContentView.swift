@@ -12,8 +12,6 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @State private var vm = ShootViewModel()
 
-    @State private var workbookToExport: ResultsWorkbook?
-    @State private var isExporting = false
     @State private var exportMessage: String?
     @State private var isShowingHelp = false
     @State private var isShowingSettings = false
@@ -140,21 +138,6 @@ struct ContentView: View {
         } message: {
             Text(uploadConfirmationMessage)
         }
-        .fileExporter(
-            isPresented: $isExporting,
-            item: workbookToExport,
-            contentTypes: [.xlsx],
-            defaultFilename: vm.exportFileName,
-            onCompletion: { result in
-                switch result {
-                case .success(let url):
-                    exportMessage = "Saved results to \(url.lastPathComponent)"
-                case .failure(let error):
-                    exportMessage = "Export failed: \(error.localizedDescription)"
-                }
-            },
-            onCancellation: {}
-        )
     }
 
     /// The help sheet binding, which only ever reads true on compact screens so
@@ -175,7 +158,6 @@ struct ContentView: View {
         ToolbarItemGroup {
             addShootersButton
             listenButton
-            exportButton
             sendButton
             serverSettingsButton
         }
@@ -224,8 +206,6 @@ struct ContentView: View {
             listenButton
 
             Menu {
-                exportButton
-
                 sendButton
 
                 serverSettingsButton
@@ -323,18 +303,6 @@ struct ContentView: View {
         } catch {
             exportMessage = "Upload failed. " + error.localizedDescription
         }
-    }
-
-    private var exportButton: some View {
-        Button {
-            workbookToExport = ResultsWorkbook(data: vm.makeWorkbookData())
-            exportMessage = nil
-            isExporting = true
-        } label: {
-            Label("Export Spreadsheet", systemImage: "square.and.arrow.up")
-        }
-        .help("Save the scores as a spreadsheet that opens in Numbers or Excel")
-        .disabled(vm.shooters.isEmpty)
     }
 
     private var standsPicker: some View {
