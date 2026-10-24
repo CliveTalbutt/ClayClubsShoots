@@ -371,8 +371,28 @@ class ShootViewModel {
         startListening(mode: .scoring)
     }
 
+    /// Keeps only what can be part of a person's name: letters, apostrophes and
+    /// hyphens. Digits, symbols, scoring words ("hit", "miss", "pair") and filler
+    /// words are dropped, so stray speech never becomes a shooter.
+    static func cleanedName(_ raw: String) -> String {
+        let ignored: Set<String> = namePrefixWords.union([
+            "hit", "hits", "miss", "misses", "missed", "lost", "dead", "kill", "pair", "single",
+            "clear", "stand", "next", "undo", "score", "shooter", "shooters", "and", "then", "the", "a", "um", "uh"
+        ])
+        let allowed = CharacterSet.letters.union(CharacterSet(charactersIn: "'-’"))
+        let words = raw.split(whereSeparator: { $0.isWhitespace }).compactMap { word -> String? in
+            let kept = String(String.UnicodeScalarView(word.unicodeScalars.filter { allowed.contains($0) }))
+                .trimmingCharacters(in: CharacterSet(charactersIn: "'-’"))
+            guard kept.rangeOfCharacter(from: .letters) != nil,
+                  !ignored.contains(kept.lowercased()) else { return nil }
+            return kept
+        }
+        return words.joined(separator: " ")
+    }
+
     func addShooter(named name: String) {
-        guard !isFull else { return }
+        let name = Self.cleanedName(name)
+        guard !name.isEmpty, !isFull else { return }
         shooters.append(
             Shooter(name: name.lowercased(),
                     numberOfStands: numberOfStands,
@@ -927,7 +947,7 @@ class ShootViewModel {
         while let first = newWords.first, Self.namePrefixWords.contains(first) {
             newWords.removeFirst()
         }
-        let name = newWords.joined(separator: " ")
+        let name = Self.cleanedName(newWords.joined(separator: " "))
 
         if isFinal {
             // The recogniser has ended this session; add what we have. A fresh
