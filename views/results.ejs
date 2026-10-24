@@ -56,8 +56,8 @@
           <% shooters.forEach(shooter => { %>
             <tr data-shooter="<%= shooter.name.toLowerCase() %>">
               <th scope="row"<%- shooterAttrs(shooter.name) %>><%= shooter.name %></th>
-              <% shooter.scores.forEach(score => { %>
-                <td class="num" data-sort-value="<%= score ?? '' %>">
+              <% shooter.scores.forEach((score, si) => { const tps = shoot.targets_per_stand; %>
+                <td class="num" data-sort-value="<%= score ?? '' %>"<% if (score != null) { %> title="Stand <%= si + 1 %>: <%= score %> hit<%= score === 1 ? '' : 's' %>, <%= tps - score %> miss<%= tps - score === 1 ? '' : 'es' %> (of <%= tps %>)&#10;<%= '●'.repeat(score) + '○'.repeat(Math.max(0, tps - score)) %>"<% } %>>
                   <% if (score == null) { %>
                     <span aria-label="No score recorded">–</span>
                   <% } else { %>
