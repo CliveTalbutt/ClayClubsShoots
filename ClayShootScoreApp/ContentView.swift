@@ -15,65 +15,107 @@ struct ContentView: View {
     @State private var workbookToExport: ResultsWorkbook?
     @State private var isExporting = false
     @State private var exportMessage: String?
+    @State private var isShowingHelp = false
+
+    /// Keyboard focus sits on the score table so the Y and X keys score the
+    /// current target without a text field swallowing them.
+    @FocusState private var isScoreTableFocused: Bool
+
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// True on iPhone-sized screens in either orientation. Fonts, spacing and the
+    /// toolbar are reduced so the controls do not crowd out the score table.
+    private var isCompact: Bool {
+        horizontalSizeClass == .compact || verticalSizeClass == .compact
+    }
+
+    /// True on an iPhone held upright, where the width is too narrow for the
+    /// header and add-shooter sections to fit on one line. In landscape the
+    /// screen is wide but short, so those sections go back to a single row.
+    private var isNarrow: Bool {
+        horizontalSizeClass == .compact && verticalSizeClass != .compact
+    }
 
     var body: some View {
-        VStack(spacing: 12) {
-            // Heading: the shoot name is edited in place by clicking on it, and today's
-            // date is appended automatically. The name is remembered between launches.
-            HStack(spacing: 8) {
-                TextField("Shoot name", text: $vm.shootName)
-                    .textFieldStyle(.plain)
-                    .font(.largeTitle.bold())
-                    .multilineTextAlignment(.trailing)
-                    .fixedSize()
-                    .help("Click to edit the shoot name")
+        NavigationStack {
+            VStack(spacing: isCompact ? 8 : 16) {
+                headerCard
 
-                Text("- \(Date.now.formatted(date: .long, time: .omitted))")
-                    .font(.largeTitle.bold())
-            }
-            .padding(.top)
-
-            addShooterControls
-
-            ScoreTableView(vm: vm)
-
-            if vm.isComplete {
-                podiumView
-            }
-
-            statusView
-
-            HStack {
-                Button("Start Listening") {
-                    vm.startListening()
+                if vm.isAddingShooter {
+                    addShooterBar
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                .padding()
-                .disabled(vm.isListening || vm.isAddingShooter || vm.shooters.isEmpty)
 
-                Button("Stop Listening") {
-                    vm.stopListening()
-                }
-                .padding()
-                .disabled(!vm.isListening || vm.isAddingShooter)
+                ScoreTableView(vm: vm)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.background.secondary, in: .rect(cornerRadius: 16))
+                    .focusable()
+                    .focusEffectDisabled()
+                    .focused($isScoreTableFocused)
+                    // Y scores a hit and X a miss on the current target. Both
+                    // upper and lower case are accepted.
+                    .onKeyPress(characters: CharacterSet(charactersIn: "yYxX"), phases: .down) { press in
+                        switch press.characters.lowercased() {
+                        case "y":
+                            vm.recordHit()
+                        case "x":
+                            vm.recordMiss()
+                        default:
+                            return .ignored
+                        }
+                        return .handled
+                    }
+                    // Tapping anywhere on the table brings keyboard focus back to
+                    // it after typing in the shoot name or a shooter's name.
+                    .simultaneousGesture(TapGesture().onEnded { isScoreTableFocused = true })
 
-                Button("Export to Excel") {
-                    workbookToExport = ResultsWorkbook(data: vm.makeWorkbookData())
-                    exportMessage = nil
-                    isExporting = true
+                if vm.isComplete {
+                    podiumView
+                        .transition(.scale(scale: 0.95).combined(with: .opacity))
                 }
-                .padding()
-                .disabled(vm.shooters.isEmpty)
+
+                statusBar
             }
-
-            if let exportMessage {
-                Text(exportMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom)
+            .padding(.horizontal, isCompact ? 12 : 20)
+            .padding(.vertical, isCompact ? 8 : 20)
+            .animation(.snappy, value: vm.isAddingShooter)
+            .animation(.snappy, value: vm.isComplete)
+            .onAppear { isScoreTableFocused = true }
+            // Once names have been entered, hand focus back so scoring keys work.
+            .onChange(of: vm.isAddingShooter) { _, isAdding in
+                if !isAdding { isScoreTableFocused = true }
+            }
+            // Release the microphone whenever the app leaves the foreground so
+            // Siri, dictation and other apps are never left without it.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background {
+                    vm.stopListeningForBackground()
+                }
+            }
+            #if os(macOS)
+            .frame(minWidth: 900, minHeight: 500)
+            #endif
+            .background(backgroundGradient.ignoresSafeArea())
+            // On iPhone the header card already shows the editable shoot name, so
+            // the navigation bar is left without a title to save vertical space.
+            .navigationTitle(isCompact ? "" : vm.title)
+            .toolbarTitleDisplayMode(isCompact ? .inline : .automatic)
+            .toolbar {
+                if isCompact {
+                    compactControlPanel
+                } else {
+                    controlPanel
+                }
+            }
+            // On iPhone the help button lives inside the overflow menu, where a
+            // popover has nothing to anchor to, so the help is shown as a sheet.
+            .sheet(isPresented: isShowingCompactHelp) {
+                VoiceCommandsHelpView()
+                    .presentationDetents([.medium, .large])
             }
         }
-        .frame(minWidth: 1100, minHeight: 400)
-        .navigationTitle(vm.title)
         .fileExporter(
             isPresented: $isExporting,
             item: workbookToExport,
@@ -91,98 +133,312 @@ struct ContentView: View {
         )
     }
 
-    // MARK: - Add shooter
+    /// The help sheet binding, which only ever reads true on compact screens so
+    /// that the Mac popover and the iPhone sheet never show at the same time.
+    private var isShowingCompactHelp: Binding<Bool> {
+        Binding(
+            get: { isCompact && isShowingHelp },
+            set: { isShowingHelp = $0 }
+        )
+    }
 
-    @ViewBuilder
-    private var addShooterControls: some View {
-        if vm.isAddingShooter {
-            HStack(spacing: 8) {
-                Image(systemName: "mic.fill")
-                    .foregroundStyle(.red)
-                Text("Say the shooter's name…")
-                    .foregroundStyle(.secondary)
+    // MARK: - Control panel
 
-                TextField("Shooter name", text: $vm.pendingShooterName)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 220)
-                    .onSubmit { vm.confirmPendingShooter() }
-
-                Button("Add") {
-                    vm.confirmPendingShooter()
-                }
-                .disabled(vm.pendingShooterName.trimmingCharacters(in: .whitespaces).isEmpty)
-
-                Button("Cancel") {
-                    vm.cancelAddingShooter()
-                }
-            }
-        } else {
-            Button {
-                vm.startAddingShooter()
-            } label: {
-                Label("Add Shooter", systemImage: "person.badge.plus")
-            }
-            .disabled(vm.isComplete)
+    /// The Mac toolbar holds every control: adding shooters, listening, exporting
+    /// and a dropdown for the number of stands in the shoot.
+    @ToolbarContentBuilder
+    private var controlPanel: some ToolbarContent {
+        ToolbarItemGroup {
+            addShootersButton
+            listenButton
+            exportButton
         }
+
+        ToolbarSpacer(.fixed)
+
+        ToolbarItem {
+            Menu {
+                standsPicker
+            } label: {
+                Label("^[\(vm.numberOfStands) Stand](inflect: true)", systemImage: "square.grid.3x3")
+                    .labelStyle(.titleAndIcon)
+            }
+            .help("Choose how many stands are in the shoot")
+            .disabled(vm.isListening)
+        }
+
+        ToolbarSpacer(.fixed)
+
+        ToolbarItem {
+            Button {
+                isShowingHelp.toggle()
+            } label: {
+                Label("Voice Commands", systemImage: "questionmark.circle")
+            }
+            .help("Show the voice commands you can say")
+            .popover(isPresented: $isShowingHelp, arrowEdge: .bottom) {
+                VoiceCommandsHelpView()
+            }
+        }
+    }
+
+    /// The iPhone toolbar keeps the two buttons used during a shoot visible and
+    /// tucks the rest into a single overflow menu, so nothing is squeezed off.
+    @ToolbarContentBuilder
+    private var compactControlPanel: some ToolbarContent {
+        // The shoot name and date sit on the same line as the buttons, so no
+        // separate header is needed above the score table.
+        ToolbarItem(placement: .navigation) {
+            shootNameAndDate
+                .frame(width: isNarrow ? 190 : 280, alignment: .leading)
+        }
+        .sharedBackgroundVisibility(.hidden)
+
+        ToolbarItemGroup {
+            addShootersButton
+            listenButton
+
+            Menu {
+                exportButton
+
+                standsPicker
+                    .disabled(vm.isListening)
+
+                Button {
+                    isShowingHelp = true
+                } label: {
+                    Label("Voice Commands", systemImage: "questionmark.circle")
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
+            }
+        }
+    }
+
+    private var addShootersButton: some View {
+        Button {
+            vm.startAddingShooter()
+        } label: {
+            Label("Add Shooters", systemImage: "person.badge.plus")
+        }
+        .help("Add shooters by saying their names")
+        .disabled(vm.isAddingShooter || vm.isComplete || vm.isFull)
+    }
+
+    private var listenButton: some View {
+        Button {
+            if vm.isListening {
+                vm.stopListening()
+            } else {
+                vm.startListening()
+            }
+        } label: {
+            Label(vm.isListening ? "Stop Listening" : "Start Listening",
+                  systemImage: vm.isListening ? "stop.fill" : "mic.fill")
+        }
+        .help(vm.isListening ? "Stop listening for scores" : "Listen for spoken scores")
+        .buttonStyle(.glassProminent)
+        .tint(vm.isListening ? .red : .accentColor)
+        .disabled(vm.isAddingShooter || vm.shooters.isEmpty)
+    }
+
+    private var exportButton: some View {
+        Button {
+            workbookToExport = ResultsWorkbook(data: vm.makeWorkbookData())
+            exportMessage = nil
+            isExporting = true
+        } label: {
+            Label("Export to Excel", systemImage: "square.and.arrow.up")
+        }
+        .help("Save the scores as an Excel workbook")
+        .disabled(vm.shooters.isEmpty)
+    }
+
+    private var standsPicker: some View {
+        Picker("Number of stands", selection: $vm.numberOfStands) {
+            ForEach(ShootViewModel.standOptions, id: \.self) { count in
+                Text("^[\(count) stand](inflect: true)")
+            }
+        }
+    }
+
+    // MARK: - Header
+
+    /// The shoot name (edited in place) and today's date. On iPhone these live in
+    /// the toolbar beside the buttons instead, so nothing is shown here.
+    @ViewBuilder
+    private var headerCard: some View {
+        if !isCompact {
+            shootNameAndDate
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+        }
+    }
+
+    private var shootNameAndDate: some View {
+        VStack(alignment: .leading, spacing: isCompact ? 0 : 4) {
+            TextField("Shoot name", text: $vm.shootName)
+                .textFieldStyle(.plain)
+                .font(isCompact ? .headline : .largeTitle.bold())
+                .help("Click to edit the shoot name")
+
+            Text(Date.now.formatted(date: .long, time: .omitted))
+                .font(isCompact ? .caption2 : .subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Add shooters
+
+    /// Shown while names are being collected: live transcript, an editable pending
+    /// name and buttons to add it or finish. On an upright iPhone the prompt goes
+    /// on one line and the name field and buttons on the next.
+    private var addShooterBar: some View {
+        Group {
+            if isNarrow {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        addShooterMicIcon
+                        addShooterPrompt
+                            .font(.subheadline)
+                        Spacer()
+                        addShooterCount
+                    }
+
+                    HStack(spacing: 10) {
+                        pendingNameField
+                        addPendingButton
+                        finishAddingButton
+                    }
+                }
+            } else {
+                HStack(spacing: 12) {
+                    addShooterMicIcon
+                    addShooterPrompt
+                    pendingNameField
+                        .frame(width: 240)
+                    addPendingButton
+                    finishAddingButton
+                    Spacer()
+                    addShooterCount
+                }
+            }
+        }
+        .padding(isCompact ? 10 : 14)
+        .background(.background.secondary, in: .rect(cornerRadius: 14))
+    }
+
+    private var addShooterMicIcon: some View {
+        Image(systemName: "mic.fill")
+            .foregroundStyle(.red)
+            .symbolEffect(.pulse, isActive: vm.isListening)
+    }
+
+    private var addShooterPrompt: some View {
+        Text("Say each name, pausing between them…")
+            .foregroundStyle(.secondary)
+    }
+
+    private var pendingNameField: some View {
+        TextField("Shooter name", text: $vm.pendingShooterName)
+            .textFieldStyle(.roundedBorder)
+            .onSubmit { vm.confirmPendingShooter() }
+    }
+
+    private var addPendingButton: some View {
+        Button("Add") {
+            vm.confirmPendingShooter()
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(vm.pendingShooterName.trimmingCharacters(in: .whitespaces).isEmpty)
+    }
+
+    private var finishAddingButton: some View {
+        Button("Finish") {
+            vm.finishAddingShooters()
+        }
+        .buttonStyle(.bordered)
+        .keyboardShortcut(.cancelAction)
+    }
+
+    private var addShooterCount: some View {
+        Text("\(vm.shooters.count) of \(ShootViewModel.maxShooters)")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
     }
 
     // MARK: - Results
 
     private var podiumView: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 10) {
             Text("Final Results")
-                .font(.title2)
-                .bold()
+                .font(isCompact ? .headline : .title3.weight(.semibold))
 
-            HStack(spacing: 32) {
+            HStack(spacing: isCompact ? 12 : 40) {
                 ForEach(vm.podium, id: \.shooter.id) { entry in
                     VStack(spacing: 2) {
                         Text(Placing.medal(entry.place) ?? "")
-                            .font(.largeTitle)
+                            .font(.system(size: isCompact ? 28 : 40))
                         Text(Placing.ordinal(entry.place))
                             .font(.headline)
                         Text(entry.shooter.name.capitalized)
+                            .lineLimit(isCompact ? 1 : nil)
+                            .minimumScaleFactor(isCompact ? 0.8 : 1)
                         Text("\(entry.shooter.grandTotal)")
-                            .font(.caption)
+                            .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
+                    // Share the width evenly on iPhone so three places always fit.
+                    .frame(maxWidth: isCompact ? .infinity : nil)
                 }
             }
         }
-        .padding()
-        .background(Color.accentColor.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(.vertical, isCompact ? 10 : 16)
+        .padding(.horizontal, isCompact ? 16 : 32)
+        .frame(maxWidth: .infinity)
+        .background(Color.accentColor.opacity(0.1), in: .rect(cornerRadius: 16))
     }
 
     // MARK: - Status
 
-    private var statusView: some View {
+    /// The latest words heard and any error or export message, so the user can see
+    /// what the recogniser understood.
+    @ViewBuilder
+    private var statusBar: some View {
         VStack(spacing: 4) {
-            // Listening status and the latest words heard, so the user can see
-            // that the microphone is live and what the recogniser understood.
-            HStack(spacing: 8) {
-                Image(systemName: vm.isListening ? "mic.fill" : "mic.slash")
-                    .foregroundStyle(vm.isListening ? .red : .secondary)
-                Text(vm.isListening ? "Listening…" : "Not listening")
-                    .foregroundStyle(.secondary)
-            }
-
             if !vm.transcript.isEmpty {
                 Text("Heard: \(vm.transcript)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
-                    .padding(.horizontal)
             }
 
             if let error = vm.errorMessage {
-                Text(error)
+                Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
                     .foregroundStyle(.red)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+            }
+
+            if let exportMessage {
+                Text(exportMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Background
+
+    private var backgroundGradient: some View {
+        LinearGradient(
+            colors: [Color.accentColor.opacity(0.08), Color.clear],
+            startPoint: .top,
+            endPoint: .center
+        )
+        .background(.background)
     }
 }
 

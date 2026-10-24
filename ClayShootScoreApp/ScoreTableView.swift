@@ -12,65 +12,163 @@ import SwiftUI
 /// available width. Each stand shows its 10 targets followed by the stand total,
 /// and the row ends with the shooter's grand total and, once the shoot is
 /// complete, their finishing place.
+///
+/// The table scrolls in both directions when it is wider or taller than the
+/// window. Whenever a shooter is selected (by voice, by clicking their name or by
+/// the scoring moving on) their row is scrolled vertically into view, leaving the
+/// horizontal position alone so the stands being viewed stay put.
 struct ScoreTableView: View {
     var vm: ShootViewModel
 
-    private let nameWidth: CGFloat = 120
-    private let standTotalWidth: CGFloat = 36
-    private let grandTotalWidth: CGFloat = 56
+    @State private var scrollPosition = ScrollPosition()
+    /// The part of the table content currently on screen, in content coordinates.
+    @State private var visibleRect = CGRect.zero
+    /// Where each shooter's row sits within the table content.
+    @State private var rowFrames: [Shooter.ID: CGRect] = [:]
+    /// A shooter whose row should be scrolled to as soon as it has been laid out.
+    @State private var pendingScrollID: Shooter.ID?
+
+    private static let tableSpace = "scoreTable"
+
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    /// True on iPhone-sized screens, where the name column, header text and
+    /// padding are trimmed so more of the first stand fits on screen.
+    private var isCompact: Bool {
+        horizontalSizeClass == .compact || verticalSizeClass == .compact
+    }
+
+    private var nameWidth: CGFloat { isCompact ? 100 : 120 }
+    private var tablePadding: CGFloat { isCompact ? 10 : 16 }
+    private var headerFont: Font { isCompact ? .caption.weight(.semibold) : .subheadline.weight(.semibold) }
+    private let targetCellWidth: CGFloat = 14
+    private let targetCellHeight: CGFloat = 18
+    private let targetCellSpacing: CGFloat = 1
+    private let standTotalWidth: CGFloat = 22
+    private let grandTotalWidth: CGFloat = 44
     private let placeWidth: CGFloat = 72
-    private let standCount = ShootViewModel.numberOfStands
     private let targetCount = ShootViewModel.targetsPerStand
 
+    /// Small fonts keep the tick, cross and totals in proportion with the narrow cells.
+    private let cellFont: Font = .caption2
+    private let totalFont: Font = .caption
+
+    private var standCount: Int { vm.numberOfStands }
+
+    /// Width of the bordered block of target cells for one stand, so the header
+    /// lines up with the rows even though the table scrolls horizontally.
+    private var standCellsWidth: CGFloat {
+        CGFloat(targetCount) * targetCellWidth + CGFloat(targetCount - 1) * targetCellSpacing + 4
+    }
+
     var body: some View {
-        ScrollView(.vertical) {
+        ScrollView([.horizontal, .vertical]) {
             VStack(alignment: .leading, spacing: 6) {
                 headerRow
 
                 if vm.shooters.isEmpty {
-                    Text("No shooters yet. Press Add Shooter and say the shooter's name.")
+                    Text("No shooters yet. Press Add Shooters and say the shooters' names.")
                         .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
+                        // Match the visible width so the message wraps instead of
+                        // running off the side of the horizontally scrolling table.
+                        .containerRelativeFrame(.horizontal, alignment: .leading) { length, _ in
+                            max(0, length - 2 * tablePadding)
+                        }
                         .padding(.vertical, 24)
                 } else {
                     ForEach(vm.shooters.indices, id: \.self) { shooterIndex in
+                        let shooterID = vm.shooters[shooterIndex].id
                         shooterRow(shooterIndex)
+                            .onGeometryChange(for: CGRect.self) { proxy in
+                                proxy.frame(in: .named(Self.tableSpace))
+                            } action: { frame in
+                                rowFrames[shooterID] = frame
+                                if pendingScrollID == shooterID {
+                                    scrollToCurrentShooter()
+                                }
+                            }
                     }
                 }
             }
-            .padding()
+            .padding(tablePadding)
+            .coordinateSpace(.named(Self.tableSpace))
+        }
+        .scrollIndicators(.visible)
+        .scrollPosition($scrollPosition)
+        .onScrollGeometryChange(for: CGRect.self) { geometry in
+            CGRect(origin: geometry.contentOffset, size: geometry.containerSize)
+        } action: { _, newValue in
+            visibleRect = newValue
+            if pendingScrollID != nil {
+                scrollToCurrentShooter()
+            }
+        }
+        .onChange(of: vm.selectionCount) { _, _ in
+            scrollToCurrentShooter()
+        }
+        .onChange(of: vm.currentShooterIndex) { _, _ in
+            scrollToCurrentShooter()
+        }
+    }
+
+    /// Scrolls vertically by the smallest amount that brings the current shooter's
+    /// row fully into view. The horizontal offset is kept exactly as it is. If the
+    /// row has not been laid out yet (a shooter was just added) the scroll happens
+    /// as soon as its frame is known.
+    private func scrollToCurrentShooter() {
+        guard let index = vm.currentShooterIndex, vm.shooters.indices.contains(index) else { return }
+        let shooterID = vm.shooters[index].id
+        guard let row = rowFrames[shooterID], visibleRect.height > 0 else {
+            pendingScrollID = shooterID
+            return
+        }
+        pendingScrollID = nil
+
+        let margin: CGFloat = 8
+        let targetY: CGFloat
+        if row.minY < visibleRect.minY {
+            targetY = row.minY - margin
+        } else if row.maxY > visibleRect.maxY {
+            targetY = row.maxY + margin - visibleRect.height
+        } else {
+            return   // Already fully visible.
+        }
+
+        withAnimation(.snappy) {
+            scrollPosition.scrollTo(x: visibleRect.minX, y: max(0, targetY))
         }
     }
 
     // MARK: - Header
 
     private var headerRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Text("Shooter")
-                .font(.headline)
+                .font(headerFont)
                 .frame(width: nameWidth, alignment: .leading)
 
             ForEach(0..<standCount, id: \.self) { stand in
-                HStack(spacing: 4) {
+                HStack(spacing: 2) {
                     Text("Stand \(stand + 1)")
-                        .font(.headline)
+                        .font(headerFont)
                         .foregroundStyle(stand == vm.currentStand && !vm.isComplete ? Color.accentColor : .primary)
-                        .frame(maxWidth: .infinity)
+                        .frame(width: standCellsWidth)
 
-                    Text("Tot")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(width: standTotalWidth)
+                    // Blank space above the stand total column keeps the header aligned
+                    // with the rows without labelling every stand total.
+                    Color.clear
+                        .frame(width: standTotalWidth, height: 1)
                 }
             }
 
             Text("Total")
-                .font(.headline)
+                .font(headerFont)
                 .frame(width: grandTotalWidth)
 
             if vm.isComplete {
                 Text("Place")
-                    .font(.headline)
+                    .font(headerFont)
                     .frame(width: placeWidth)
             }
         }
@@ -82,7 +180,7 @@ struct ScoreTableView: View {
         let shooter = vm.shooters[shooterIndex]
         let isCurrentShooter = shooterIndex == vm.currentShooterIndex && !vm.isComplete
 
-        return HStack(spacing: 8) {
+        return HStack(spacing: 6) {
             // Clicking a name also makes that shooter current.
             HStack(spacing: 4) {
                 Image(systemName: "arrowtriangle.right.fill")
@@ -90,8 +188,10 @@ struct ScoreTableView: View {
                     .foregroundStyle(Color.accentColor)
                     .opacity(isCurrentShooter ? 1 : 0)
                 Text(shooter.name.capitalized)
+                    .font(.subheadline)
                     .fontWeight(isCurrentShooter ? .bold : .regular)
                     .foregroundStyle(isCurrentShooter ? Color.accentColor : .primary)
+                    .lineLimit(1)
             }
             .frame(width: nameWidth, alignment: .leading)
             .contentShape(Rectangle())
@@ -104,6 +204,7 @@ struct ScoreTableView: View {
             }
 
             Text("\(shooter.grandTotal)")
+                .font(.subheadline.monospacedDigit())
                 .bold()
                 .frame(width: grandTotalWidth)
 
@@ -123,15 +224,14 @@ struct ScoreTableView: View {
         let standScores = shooter.scores.indices.contains(stand) ? shooter.scores[stand] : []
         let isCurrentStand = stand == vm.currentStand && !vm.isComplete
 
-        return HStack(spacing: 4) {
-            HStack(spacing: 2) {
+        return HStack(spacing: 2) {
+            HStack(spacing: targetCellSpacing) {
                 ForEach(0..<targetCount, id: \.self) { target in
                     let score = target < standScores.count ? standScores[target] : -1
-                    Text(score == -1 ? "-" : "\(score)")
-                        .font(.callout.monospacedDigit())
-                        .frame(maxWidth: .infinity, minHeight: 26)
+                    cellSymbol(for: score)
+                        .frame(width: targetCellWidth, height: targetCellHeight)
                         .background(cellColor(for: score))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
                         .contentShape(Rectangle())
                         .onTapGesture {
                             toggleScore(shooterIndex: shooterIndex, stand: stand, target: target, current: score)
@@ -145,7 +245,7 @@ struct ScoreTableView: View {
             )
 
             Text("\(shooter.standTotal(stand))")
-                .font(.callout.monospacedDigit())
+                .font(totalFont.monospacedDigit())
                 .bold()
                 .frame(width: standTotalWidth)
         }
@@ -168,6 +268,26 @@ struct ScoreTableView: View {
     }
 
     // MARK: - Helpers
+
+    /// A green tick for a hit, a red cross for a miss and a dash for a target
+    /// that has not been shot yet.
+    @ViewBuilder
+    private func cellSymbol(for score: Int) -> some View {
+        switch score {
+        case let hit where hit > 0:
+            Image(systemName: "checkmark")
+                .font(cellFont.weight(.bold))
+                .foregroundStyle(.green)
+        case 0:
+            Image(systemName: "xmark")
+                .font(cellFont.weight(.bold))
+                .foregroundStyle(.red)
+        default:
+            Text("-")
+                .font(cellFont)
+                .foregroundStyle(.secondary)
+        }
+    }
 
     private func cellColor(for score: Int) -> Color {
         switch score {

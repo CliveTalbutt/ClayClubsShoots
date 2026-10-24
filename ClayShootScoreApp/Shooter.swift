@@ -24,6 +24,30 @@ nonisolated struct Shooter: Identifiable, Sendable {
         )
     }
 
+    /// Changes the number of stands, keeping any scores already recorded on the
+    /// stands that remain and adding empty stands as needed.
+    mutating func resize(numberOfStands: Int, targetsPerStand: Int) {
+        let emptyStand = Array(repeating: -1, count: targetsPerStand)
+        if scores.count > numberOfStands {
+            scores.removeLast(scores.count - numberOfStands)
+        } else if scores.count < numberOfStands {
+            scores.append(contentsOf: Array(repeating: emptyStand, count: numberOfStands - scores.count))
+        }
+    }
+
+    /// Marks every target on one stand as not yet shot.
+    mutating func clearStand(_ stand: Int) {
+        guard scores.indices.contains(stand) else { return }
+        scores[stand] = Array(repeating: -1, count: scores[stand].count)
+    }
+
+    /// Marks every target on every stand as not yet shot.
+    mutating func clearAllScores() {
+        for stand in scores.indices {
+            clearStand(stand)
+        }
+    }
+
     /// Total for a single stand, counting only scored targets.
     func standTotal(_ stand: Int) -> Int {
         guard scores.indices.contains(stand) else { return 0 }
