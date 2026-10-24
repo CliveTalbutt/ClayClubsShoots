@@ -78,3 +78,7 @@ footer{text-align:center;color:var(--muted);padding:24px}
 .cpsa-hint{cursor:help}
 .shooter-dialog p.muted{margin:8px 0 0;font-size:.8rem}
 .shooter-dialog .cpsa-current{color:#fcd34d;font-weight:700}
+.shooter-dialog.interactive{pointer-events:auto}
+.shooter-send{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.shooter-send input{width:100%;margin:0}
+.shooter-send-msg{margin:6px 0 0;font-size:.85rem}

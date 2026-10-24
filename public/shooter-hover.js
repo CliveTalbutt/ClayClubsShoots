@@ -9,7 +9,66 @@ if (shooterDialog) {
   };
   const fmt = (value, suffix = '') => (value == null ? '–' : `${value.toFixed(1)}${suffix}`);
 
+  // "Send results" button; asks for an email address first when the shooter has none.
+  const sendArea = (nameCell) => {
+    const name = nameCell.dataset.name;
+    const wrap = cell('div', '', 'shooter-send');
+    const msg = cell('p', '', 'shooter-send-msg muted');
+    msg.setAttribute('role', 'status');
+    const button = cell('button', 'Send results', 'btn small secondary');
+    button.type = 'button';
+    const post = async (email) => {
+      button.disabled = true;
+      msg.textContent = 'Sending…';
+      try {
+        const body = new URLSearchParams({ _csrf: shooterDialog.dataset.csrf, name });
+        if (email) body.set('email', email);
+        const res = await fetch('/shooters/send-all', { method: 'POST', body, headers: { Accept: 'application/json' } });
+        const data = await res.json().catch(() => ({ ok: false, message: 'Something went wrong.' }));
+        if (data.message === 'needs_email') { askEmail(); return; }
+        msg.textContent = data.message;
+        if (data.ok) { nameCell.dataset.hasEmail = '1'; wrap.querySelector('input')?.remove(); }
+      } catch { msg.textContent = 'Could not reach the server.'; }
+      button.disabled = false;
+    };
+    const askEmail = () => {
+      let input = wrap.querySelector('input');
+      if (!input) {
+        input = document.createElement('input');
+        input.type = 'email';
+        input.maxLength = 200;
+        input.placeholder = 'Email address for ' + name;
+        input.setAttribute('aria-label', 'Email address for ' + name);
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); button.click(); } });
+        wrap.insertBefore(input, button);
+      }
+      button.disabled = false;
+      msg.textContent = 'No email saved for this shooter. Enter one to send.';
+      input.focus();
+    };
+    button.addEventListener('click', () => {
+      const input = wrap.querySelector('input');
+      if (input) {
+        if (!input.value.trim() || !input.checkValidity()) { msg.textContent = 'Enter a valid email address.'; input.focus(); return; }
+        post(input.value.trim());
+      } else if (nameCell.dataset.hasEmail === '1') post('');
+      else askEmail();
+    });
+    wrap.append(button, msg);
+    return wrap;
+  };
+
+  let closeTimer;
+  const closeSoon = () => { clearTimeout(closeTimer); closeTimer = setTimeout(() => shooterDialog.close(), 250); };
+  const keepOpen = () => clearTimeout(closeTimer);
+  shooterDialog.addEventListener('mouseenter', keepOpen);
+  shooterDialog.addEventListener('mouseleave', closeSoon);
+  shooterDialog.addEventListener('focusin', keepOpen);
+  shooterDialog.addEventListener('focusout', () => { if (!shooterDialog.matches(':hover')) closeSoon(); });
+  shooterDialog.addEventListener('keydown', (e) => { if (e.key === 'Escape') shooterDialog.close(); });
+
   const showStats = (nameCell) => {
+    keepOpen();
     const stats = JSON.parse(nameCell.dataset.stats);
     const table = document.createElement('table');
     const head = table.createTHead().insertRow();
@@ -30,7 +89,7 @@ if (shooterDialog) {
     } else {
       heading.append(cell('span', 'Unclassified', 'class-badge'));
     }
-    shooterDialog.replaceChildren(heading, table);
+    shooterDialog.replaceChildren(heading, table, sendArea(nameCell));
     shooterDialog.show();
     const rect = nameCell.getBoundingClientRect();
     const left = Math.min(rect.left, window.innerWidth - shooterDialog.offsetWidth - 8);
@@ -41,9 +100,12 @@ if (shooterDialog) {
   document.querySelectorAll('.shooter-name').forEach((nameCell) => {
     nameCell.addEventListener('mouseenter', () => showStats(nameCell));
     nameCell.addEventListener('focus', () => showStats(nameCell));
-    nameCell.addEventListener('mouseleave', () => shooterDialog.close());
-    nameCell.addEventListener('blur', () => shooterDialog.close());
-    nameCell.addEventListener('keydown', (e) => { if (e.key === 'Escape') shooterDialog.close(); });
+    nameCell.addEventListener('mouseleave', closeSoon);
+    nameCell.addEventListener('blur', closeSoon);
+    nameCell.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') shooterDialog.close();
+      else if (e.key === 'Enter') shooterDialog.querySelector('button, input')?.focus();
+    });
   });
 }
 

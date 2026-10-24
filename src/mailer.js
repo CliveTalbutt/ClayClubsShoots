@@ -122,6 +122,73 @@ ${notes.map((n) => `<p>${esc(n)}</p>`).join('')}
     return { subject, text, html };
   }
 
+  // One email covering every shoot a shooter has taken part in.
+  function historySummary(userId, shooterName) {
+    const rows = db.prepare(`SELECT s.id, s.name, s.venue, s.shoot_date, s.shoot_time, s.targets_per_stand AS tps, r.shooter, r.score
+      FROM results r JOIN shoots s ON s.id = r.shoot_id WHERE s.user_id = ?
+      AND s.id IN (SELECT shoot_id FROM results WHERE shooter = ? COLLATE NOCASE)`).all(userId, shooterName);
+    const byShoot = new Map();
+    for (const r of rows) {
+      if (!byShoot.has(r.id)) byShoot.set(r.id, { ...r, totals: new Map(), stands: 0 });
+      const s = byShoot.get(r.id);
+      s.totals.set(r.shooter, (s.totals.get(r.shooter) || 0) + r.score);
+      if (key(r.shooter) === key(shooterName)) s.stands += 1;
+    }
+    const shoots = [...byShoot.values()].map((s) => {
+      const mineKey = [...s.totals.keys()].find((k) => key(k) === key(shooterName));
+      const total = s.totals.get(mineKey);
+      const possible = s.stands * s.tps;
+      return {
+        name: s.name, venue: s.venue, date: s.shoot_date, time: s.shoot_time, total, possible,
+        pct: (100 * total) / possible, place: 1 + [...s.totals.values()].filter((t) => t > total).length, field: s.totals.size,
+      };
+    }).sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
+    if (!shoots.length) return null;
+    const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 1);
+    const cutoffDate = cutoff.toISOString().slice(0, 10);
+    const pct = (list) => (list.length ? (100 * list.reduce((n, h) => n + h.total, 0)) / list.reduce((n, h) => n + h.possible, 0) : null);
+    const last12 = shoots.filter((s) => s.date >= cutoffDate);
+    const name = [...rows].find((r) => key(r.shooter) === key(shooterName)).shooter;
+    return {
+      name, shoots, allPct: pct(shoots), last12Pct: pct(last12), wins: shoots.filter((s) => s.place === 1).length,
+      best: shoots.reduce((a, b) => (b.pct > a.pct ? b : a)),
+      cpsa: classify({ last12: { avgPct: pct(last12) }, allTime: { avgPct: pct(shoots) } }),
+      club: db.prepare('SELECT club_name FROM users WHERE id = ?').get(userId)?.club_name || 'Clay Shoots',
+    };
+  }
+
+  function composeHistory(h) {
+    const when = (s) => s.date + (s.time ? ` ${s.time}` : '');
+    const placeText = (s) => `${MEDALS[s.place - 1] ? `${MEDALS[s.place - 1]} ` : ''}${ordinal(s.place)} of ${s.field}`;
+    const notes = [
+      `${h.shoots.length} shoot${h.shoots.length === 1 ? '' : 's'} recorded, averaging ${h.allPct.toFixed(1)}% overall${h.last12Pct != null ? ` and ${h.last12Pct.toFixed(1)}% over the last 12 months` : ''}.`,
+      `Your best was ${h.best.pct.toFixed(1)}% at ${h.best.name} on ${h.best.date}${h.wins ? `, and you have won ${h.wins} shoot${h.wins === 1 ? '' : 's'}` : ''}.`,
+    ];
+    if (h.cpsa) notes.push(`You are currently ${h.cpsa.icon} Class ${h.cpsa.name} (unofficial estimate).`);
+    const subject = `Your results from all ${h.shoots.length} shoot${h.shoots.length === 1 ? '' : 's'}`;
+    const text = [
+      `Hi ${h.name},`, '', 'Here are your results from every shoot on record:', '',
+      ...h.shoots.map((s) => `  ${when(s)}  ${s.name}${s.venue ? ` (${s.venue})` : ''}\n      ${placeText(s)} · ${s.total}/${s.possible} · ${s.pct.toFixed(1)}%`),
+      '', ...notes, '', `Sent by ${h.club}.`,
+    ].join('\n');
+    const html = `<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:620px;margin:auto;color:#1f2937">
+<h2 style="margin:0 0 8px">Your results</h2><p>Hi ${esc(h.name)}, here is every shoot on record.</p>
+<table style="width:100%;border-collapse:collapse"><tr style="text-align:left;color:#6b7280;font-size:12px"><th>Date</th><th>Shoot</th><th>Position</th><th style="text-align:right">Score</th><th style="text-align:right">%</th></tr>
+${h.shoots.map((s) => `<tr style="border-top:1px solid #e5e7eb"><td style="padding:6px 8px 6px 0;white-space:nowrap">${esc(when(s))}</td><td>${esc(s.name)}${s.venue ? `<div style="font-size:12px;color:#6b7280">${esc(s.venue)}</div>` : ''}</td><td>${esc(placeText(s))}</td><td style="text-align:right">${s.total}/${s.possible}</td><td style="text-align:right;font-weight:600">${s.pct.toFixed(1)}%</td></tr>`).join('')}</table>
+${notes.map((n) => `<p>${esc(n)}</p>`).join('')}
+<p style="color:#9ca3af;font-size:12px;margin-top:24px">Sent by ${esc(h.club)}. Ask the club to remove your address if you do not want these emails.</p></div>`;
+    return { subject, text, html };
+  }
+
+  const sentLog = new Map();
+  const tooMany = (userId) => {
+    const now = Date.now();
+    const recent = (sentLog.get(userId) || []).filter((t) => now - t < 3600e3);
+    if (recent.length >= 20) { sentLog.set(userId, recent); return true; }
+    recent.push(now); sentLog.set(userId, recent);
+    return false;
+  };
+
   const setStatus = (userId, k, status) => db.prepare(
     "UPDATE shooter_emails SET last_status = ?, last_at = datetime('now') WHERE user_id = ? AND shooter_key = ?"
   ).run(status, userId, k);
@@ -186,6 +253,37 @@ ${notes.map((n) => `<p>${esc(n)}</p>`).join('')}
     res.redirect('/shooters?msg=' + encodeURIComponent(`Saved the email for ${name}.`));
   });
 
+  // Used by the hover dialog: emails all of a shooter's results, saving a new address if one is given.
+  router.post('/send-all', needAuth, wrap(async (req, res) => {
+    const uid = req.session.userId;
+    const reply = (status, ok, message) => res.status(status).json({ ok, message });
+    const name = String(req.body.name || '').trim();
+    const given = String(req.body.email || '').trim();
+    const h = name ? historySummary(uid, name) : null;
+    if (!h) return reply(404, false, 'No results found for this shooter.');
+    if (!configured()) return reply(503, false, 'Outgoing email is not set up yet.');
+    let row = db.prepare('SELECT * FROM shooter_emails WHERE user_id = ? AND shooter_key = ?').get(uid, key(name));
+    if (given) {
+      if (!validEmail(given)) return reply(400, false, 'Enter a valid email address.');
+      saveEmails(uid, [{ name: h.name, email: given }]);
+      row = db.prepare('SELECT * FROM shooter_emails WHERE user_id = ? AND shooter_key = ?').get(uid, key(name));
+    }
+    if (!row) return reply(409, false, 'needs_email');
+    if (tooMany(uid)) return reply(429, false, 'Too many emails sent this hour. Try again later.');
+    try {
+      const m = composeHistory(h);
+      await getTransport().sendMail({
+        from: process.env.MAIL_FROM || process.env.SMTP_USER || 'Clay Shoots <no-reply@localhost>',
+        to: row.email, subject: m.subject, text: m.text, html: m.html,
+      });
+      setStatus(uid, row.shooter_key, `Sent: all ${h.shoots.length} shoots`);
+      return reply(200, true, `Sent all ${h.shoots.length} shoot${h.shoots.length === 1 ? '' : 's'} to ${row.email}.`);
+    } catch (e) {
+      setStatus(uid, row.shooter_key, `Failed: ${String(e.code || 'error').slice(0, 30)}`);
+      return reply(502, false, 'The email could not be sent.');
+    }
+  }));
+
   router.post('/auto', needAuth, (req, res) => {
     const on = req.body.auto === '1' ? 1 : 0;
     db.prepare('UPDATE users SET email_results = ? WHERE id = ?').run(on, req.session.userId);
@@ -205,5 +303,5 @@ ${notes.map((n) => `<p>${esc(n)}</p>`).join('')}
     res.redirect('/shooters?' + (status.startsWith('Sent') ? 'msg=' : 'err=') + encodeURIComponent(status));
   }));
 
-  return { router, sendShoot, saveEmails, validEmail, compose, summary };
+  return { router, sendShoot, saveEmails, validEmail, compose, summary, historySummary, composeHistory };
 };

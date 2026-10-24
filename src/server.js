@@ -298,7 +298,8 @@ app.use((req, res, next) => {
       }
     }
     const s = stats.get(name);
-    return s ? ` class="shooter-name" tabindex="0" data-name="${escapeAttr(name)}" data-stats="${escapeAttr(JSON.stringify(s))}"` : '';
+    const hasEmail = db.prepare('SELECT 1 FROM shooter_emails WHERE user_id = ? AND shooter_key = ?').get(req.session.userId, String(name).trim().toLowerCase()) ? ' data-has-email="1"' : '';
+    return s ? ` class="shooter-name" tabindex="0" data-name="${escapeAttr(name)}"${hasEmail} data-stats="${escapeAttr(JSON.stringify(s))}"` : '';
   };
   next();
 });
