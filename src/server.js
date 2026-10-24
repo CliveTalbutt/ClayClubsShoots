@@ -114,6 +114,18 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
   if (errors.length) return res.status(400).json({ error: 'validation_failed', details: errors });
 
   try {
+    const existing = b.externalId != null
+      ? db.prepare('SELECT id FROM shoots WHERE user_id = ? AND external_id = ?').get(user.id, b.externalId) : null;
+    if (existing) {
+      db.transaction(() => {
+        db.prepare('UPDATE shoots SET name = ?, venue = ?, shoot_date = ?, stands = ?, targets_per_stand = ? WHERE id = ?')
+          .run(b.name.trim(), b.venue?.trim() ?? null, b.date, b.stands, tps, existing.id);
+        db.prepare('DELETE FROM results WHERE shoot_id = ?').run(existing.id);
+        const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score) VALUES (?,?,?,?)');
+        for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(existing.id, s.name.trim(), i + 1, sc));
+      })();
+      return res.status(201).json({ id: existing.id, updated: true, url: `${BASE_URL}/shoots/${encodeId(user.id, existing.id)}` });
+    }
     const id = db.transaction(() => {
       const r = db.prepare(
         'INSERT INTO shoots (user_id, external_id, name, venue, shoot_date, stands, targets_per_stand) VALUES (?,?,?,?,?,?,?)'
