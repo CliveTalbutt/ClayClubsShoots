@@ -49,7 +49,7 @@ module.exports = function createMailer({ db, classify, needAuth, wrap }) {
 
     const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 1);
     const cutoffDate = cutoff.toISOString().slice(0, 10);
-    const history = db.prepare(`SELECT s.id, s.shoot_date, SUM(r.score) AS total, s.stands * s.targets_per_stand AS possible
+    const history = db.prepare(`SELECT s.id, s.shoot_date, SUM(r.score) AS total, COUNT(*) * s.targets_per_stand AS possible
       FROM results r JOIN shoots s ON s.id = r.shoot_id WHERE s.user_id = ? AND r.shooter = ? COLLATE NOCASE GROUP BY s.id`).all(userId, name);
     const pct = (list) => (list.length ? (100 * list.reduce((n, h) => n + h.total, 0)) / list.reduce((n, h) => n + h.possible, 0) : null);
     const recentOthers = history.filter((h) => h.id !== shootId && h.shoot_date >= cutoffDate);

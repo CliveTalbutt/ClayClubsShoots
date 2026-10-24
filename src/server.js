@@ -332,7 +332,7 @@ app.use((req, res, next) => {
     if (!stats) {
       const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 1);
       const cutoffDate = cutoff.toISOString().slice(0, 10);
-      const history = db.prepare(`SELECT r.shooter, s.shoot_date, SUM(r.score) AS total, s.stands * s.targets_per_stand AS possible
+      const history = db.prepare(`SELECT r.shooter, s.shoot_date, SUM(r.score) AS total, COUNT(*) * s.targets_per_stand AS possible
         FROM results r JOIN shoots s ON s.id = r.shoot_id WHERE s.user_id = ? GROUP BY r.shooter, s.id`).all(req.session.userId);
       const summarise = (rows) => ({
         shoots: rows.length,
@@ -387,7 +387,7 @@ app.get('/results', needAuth, (req, res) => {
     // tied totals share a place
     const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 1);
     const cutoffDate = cutoff.toISOString().slice(0, 10);
-    const history = db.prepare(`SELECT r.shooter, s.shoot_date, SUM(r.score) AS total, s.stands * s.targets_per_stand AS possible
+    const history = db.prepare(`SELECT r.shooter, s.shoot_date, SUM(r.score) AS total, COUNT(*) * s.targets_per_stand AS possible
       FROM results r JOIN shoots s ON s.id = r.shoot_id WHERE s.user_id = ? GROUP BY r.shooter, s.id`).all(req.session.userId);
     const summarise = (rows) => ({
       shoots: rows.length,
