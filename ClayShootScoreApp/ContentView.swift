@@ -19,7 +19,6 @@ struct ContentView: View {
     @State private var isShowingSettings = false
     @State private var isConfirmingUpload = false
     @State private var isUploading = false
-    @State private var uploadExternalId = UUID().uuidString
     @State private var serverSettings = ClayShootsSettings()
 
     /// Keyboard focus sits on the score table so the Y and X keys score the
@@ -303,13 +302,13 @@ struct ContentView: View {
 
     private var uploadConfirmationMessage: String {
         let count = vm.shooters.count
-        var text = "Upload \(count) shooter\(count == 1 ? "" : "s") from \"\(vm.shootName)\"\(vm.venue.isEmpty ? "" : " at \(vm.venue)") to the server?"
+        var text = "Upload \(count) shooter\(count == 1 ? "" : "s") from \"\(vm.shootName)\"\(vm.venue.isEmpty ? "" : " at \(vm.venue)") to the server? Uploading the same shoot again replaces its earlier results."
         if vm.hasUnscoredTargets { text += " Some targets are not scored yet and will be uploaded as misses." }
         return text
     }
 
     private func uploadToServer() async {
-        guard let client = serverSettings.client, let upload = vm.makeUpload(externalId: uploadExternalId) else {
+        guard let client = serverSettings.client, let upload = vm.makeUpload(externalId: vm.shootIdentity) else {
             exportMessage = ClayShootsError.notConfigured.localizedDescription
             return
         }
@@ -318,10 +317,8 @@ struct ContentView: View {
         defer { isUploading = false }
         do {
             _ = try await client.send(upload)
-            uploadExternalId = UUID().uuidString
             exportMessage = "Uploaded \(upload.shooters.count) shooters to the server."
         } catch ClayShootsError.server(409) {
-            uploadExternalId = UUID().uuidString
             exportMessage = "This shoot was already uploaded."
         } catch {
             exportMessage = "Upload failed. " + error.localizedDescription

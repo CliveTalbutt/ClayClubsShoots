@@ -6,6 +6,7 @@
 
 import Foundation
 import Security
+import CryptoKit
 
 /// The body accepted by `POST /api/v1/shoots`.
 nonisolated struct ShootUpload: Encodable, Sendable {
@@ -181,6 +182,15 @@ final class ClayShootsSettings {
 }
 
 extension ShootViewModel {
+    /// Stable id for a shoot (name, venue and today's date) so uploading it again
+    /// replaces the earlier results on the server instead of adding a duplicate.
+    var shootIdentity: String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+        let key = [shootName, venue, "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.joined(separator: "|")
+        return SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Builds the API payload from the current scoresheet. Targets not yet shot
     /// count as misses, and blank or repeated shooter names are made unique because
     /// the server requires distinct names.
