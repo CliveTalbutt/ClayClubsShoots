@@ -398,60 +398,6 @@ app.post('/shoots/:token/delete', needAuth, (req, res) => {
   res.redirect('/dashboard');
 });
 
-app.get('/compare', needAuth, (req, res) => {
-  const all = db.prepare('SELECT id, name, shoot_date, shoot_time, targets_per_stand, stands FROM shoots WHERE user_id = ? ORDER BY shoot_date, shoot_time, id').all(req.session.userId);
-  let ids = [].concat(req.query.ids || []).map((t) => decodeId(req.session.userId, t)).filter(Number.isInteger);
-  const owned = new Set(all.map((s) => s.id));
-  ids = ids.filter((i) => owned.has(i));
-  if (!req.query.ids && all.length) ids = all.map((s) => s.id);
-  const selected = all.filter((s) => ids.includes(s.id));
-  const map = new Map();
-  if (selected.length) {
-    const rows = db.prepare(`SELECT shoot_id, shooter, SUM(score) AS total FROM results
-      WHERE shoot_id IN (${selected.map(() => '?').join(',')}) GROUP BY shoot_id, shooter`).all(...selected.map((s) => s.id));
-    const byId = new Map(selected.map((s) => [s.id, s]));
-    for (const r of rows) {
-      if (!map.has(r.shooter)) map.set(r.shooter, { name: r.shooter, per: {}, total: 0, possible: 0 });
-      const s = map.get(r.shooter), sh = byId.get(r.shoot_id);
-      s.per[r.shoot_id] = r.total; s.total += r.total; s.possible += sh.stands * sh.targets_per_stand;
-    }
-  }
-  const shootBySortKey = new Map(all.map((shoot) => [`shoot-${encodeId(req.session.userId, shoot.id)}`, shoot.id]));
-  const allowedSortKeys = new Set(['name', 'total', 'pct', ...shootBySortKey.keys()]);
-  const requestedSort = [].concat(req.query.sort || []).filter((value) => typeof value === 'string');
-  let sortOrder;
-  if (!requestedSort.length) {
-    sortOrder = [{ key: 'pct', direction: 'desc' }];
-  } else if (requestedSort.includes('none')) {
-    sortOrder = [];
-  } else {
-    sortOrder = requestedSort.flatMap((value) => {
-      if (['name', 'total', 'pct'].includes(value)) {
-        return [{ key: value, direction: value === 'name' ? 'asc' : 'desc' }];
-      }
-      const match = /^(name|total|pct|shoot-[\w-]+):(asc|desc)$/.exec(value);
-      return match && allowedSortKeys.has(match[1])
-        ? [{ key: match[1], direction: match[2] }]
-        : [];
-    }).filter((sort, index, sorts) => sorts.findIndex((item) => item.key === sort.key) === index);
-  }
-  const shooters = [...map.values()].map((s) => ({ ...s, pct: s.possible ? (100 * s.total) / s.possible : 0 }));
-  shooters.sort((a, b) => {
-    for (const { key, direction } of sortOrder) {
-      const aValue = shootBySortKey.has(key) ? a.per[shootBySortKey.get(key)] : a[key];
-      const bValue = shootBySortKey.has(key) ? b.per[shootBySortKey.get(key)] : b[key];
-      if (aValue == null || bValue == null) {
-        if (aValue !== bValue) return aValue == null ? 1 : -1;
-        continue;
-      }
-      const result = typeof aValue === 'string' ? aValue.localeCompare(bValue) : aValue - bValue;
-      if (result) return direction === 'asc' ? result : -result;
-    }
-    return 0;
-  });
-  res.render('compare', { all, selected, shooters, sortOrder, ids });
-});
-
 app.post('/settings/api-key', needAuth, (req, res) => {
   const key = 'cs_' + crypto.randomBytes(32).toString('hex');
   db.prepare('UPDATE users SET api_key_hash = ? WHERE id = ?').run(hashKey(key), req.session.userId);
