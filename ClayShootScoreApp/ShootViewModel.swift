@@ -48,6 +48,12 @@ class ShootViewModel {
 
     private static let shootNameKey = "shootName"
     private static let numberOfStandsKey = "numberOfStands"
+    private static let venueKey = "shootVenue"
+
+    /// Where the shoot takes place; uploaded to the server with the results.
+    var venue: String {
+        didSet { UserDefaults.standard.set(venue, forKey: Self.venueKey) }
+    }
 
     /// User-editable name of the shoot, shown in the heading alongside today's date.
     /// Saved to user defaults so it survives relaunching the app.
@@ -67,6 +73,7 @@ class ShootViewModel {
     }
 
     init() {
+        venue = UserDefaults.standard.string(forKey: Self.venueKey) ?? "West Peckham Gun Club"
         shootName = UserDefaults.standard.string(forKey: Self.shootNameKey) ?? "West Peckham Shoot"
         let savedStands = UserDefaults.standard.integer(forKey: Self.numberOfStandsKey)
         numberOfStands = Self.standOptions.contains(savedStands) ? savedStands : Self.defaultNumberOfStands

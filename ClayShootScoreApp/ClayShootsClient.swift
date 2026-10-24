@@ -16,6 +16,7 @@ nonisolated struct ShootUpload: Encodable, Sendable {
 
     let externalId: String
     let name: String
+    let venue: String?
     let date: String
     let stands: Int
     let targetsPerStand: Int
@@ -206,6 +207,7 @@ extension ShootViewModel {
         return ShootUpload(
             externalId: externalId,
             name: String((name.isEmpty ? "Shoot" : name).prefix(120)),
+            venue: venue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : String(venue.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120)),
             date: date,
             stands: numberOfStands,
             targetsPerStand: targets,

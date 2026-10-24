@@ -303,7 +303,7 @@ struct ContentView: View {
 
     private var uploadConfirmationMessage: String {
         let count = vm.shooters.count
-        var text = "Upload \(count) shooter\(count == 1 ? "" : "s") from \"\(vm.shootName)\" to the server?"
+        var text = "Upload \(count) shooter\(count == 1 ? "" : "s") from \"\(vm.shootName)\"\(vm.venue.isEmpty ? "" : " at \(vm.venue)") to the server?"
         if vm.hasUnscoredTargets { text += " Some targets are not scored yet and will be uploaded as misses." }
         return text
     }
@@ -367,6 +367,11 @@ struct ContentView: View {
                 .textFieldStyle(.plain)
                 .font(isCompact ? .headline : .largeTitle.bold())
                 .help("Click to edit the shoot name")
+
+            TextField("Venue", text: $vm.venue)
+                .textFieldStyle(.plain)
+                .font(isCompact ? .caption : .subheadline)
+                .foregroundStyle(.secondary)
 
             Text(Date.now.formatted(date: .long, time: .omitted))
                 .font(isCompact ? .caption2 : .subheadline)
