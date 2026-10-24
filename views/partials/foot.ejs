@@ -1,4 +1,5 @@
 </main>
+<% if (typeof cpsaClasses !== 'undefined') { %><script type="application/json" id="cpsa-data"><%- JSON.stringify(cpsaClasses).replace(/</g, '\\u003c') %></script><% } %>
 <dialog id="shooter-dialog" class="shooter-dialog" aria-live="polite"></dialog>
 <script src="/shooter-hover.js" defer></script>
 <% if (typeof user !== 'undefined' && user) { %><script src="/live.js" defer></script><% } %>

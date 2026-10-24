@@ -75,3 +75,6 @@ footer{text-align:center;color:var(--muted);padding:24px}
 .nav-sub a:hover,.nav-sub a:focus{background:var(--card)}
 .nav-menu:hover .nav-sub,.nav-menu:focus-within .nav-sub{display:block}
 @media (hover:none){.nav-menu{display:flex;gap:16px;flex-wrap:wrap}.nav-sub{display:flex;position:static;gap:16px;background:none;border:0;padding:0;box-shadow:none;min-width:0}.nav-sub a{padding:0}}
+.cpsa-hint{cursor:help}
+.shooter-dialog p.muted{margin:8px 0 0;font-size:.8rem}
+.shooter-dialog .cpsa-current{color:#fcd34d;font-weight:700}

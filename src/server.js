@@ -166,6 +166,7 @@ app.use((req, res, next) => {
     ? db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId) : null;
   res.locals.active = isActive(res.locals.user);
   res.locals.when = (s) => s.shoot_date + (s.shoot_time ? ` ${s.shoot_time}` : '');
+  res.locals.cpsaClasses = CPSA_CLASSES;
   res.locals.eid = (id) => encodeId(req.session.userId, id);
   res.locals.error = null;
   if (req.method === 'POST') {
