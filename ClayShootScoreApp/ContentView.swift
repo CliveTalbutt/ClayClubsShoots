@@ -16,6 +16,11 @@ struct ContentView: View {
     @State private var isExporting = false
     @State private var exportMessage: String?
     @State private var isShowingHelp = false
+    @State private var isShowingSettings = false
+    @State private var isConfirmingUpload = false
+    @State private var isUploading = false
+    @State private var uploadExternalId = UUID().uuidString
+    @State private var serverSettings = ClayShootsSettings()
 
     /// Keyboard focus sits on the score table so the Y and X keys score the
     /// current target without a text field swallowing them.
@@ -126,6 +131,16 @@ struct ContentView: View {
                     .presentationDetents([.medium, .large])
             }
         }
+        .sheet(isPresented: $isShowingSettings) {
+            SendToServerView(settings: serverSettings)
+                .presentationDetents([.medium, .large])
+        }
+        .confirmationDialog("Upload to Server", isPresented: $isConfirmingUpload, titleVisibility: .visible) {
+            Button("Upload") { Task { await uploadToServer() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(uploadConfirmationMessage)
+        }
         .fileExporter(
             isPresented: $isExporting,
             item: workbookToExport,
@@ -162,6 +177,8 @@ struct ContentView: View {
             addShootersButton
             listenButton
             exportButton
+            sendButton
+            serverSettingsButton
         }
 
         ToolbarSpacer(.fixed)
@@ -209,6 +226,10 @@ struct ContentView: View {
 
             Menu {
                 exportButton
+
+                sendButton
+
+                serverSettingsButton
 
                 standsPicker
 
@@ -258,15 +279,64 @@ struct ContentView: View {
         return vm.isListening ? .accentColor : .gray
     }
 
+    private var sendButton: some View {
+        Button {
+            if serverSettings.client == nil {
+                isShowingSettings = true
+            } else {
+                isConfirmingUpload = true
+            }
+        } label: {
+            Label("Upload to Server", systemImage: "icloud.and.arrow.up")
+        }
+        .disabled(vm.shooters.isEmpty || isUploading)
+        .help("Upload the scores to your Clay Shoots website")
+    }
+
+    private var serverSettingsButton: some View {
+        Button {
+            isShowingSettings = true
+        } label: {
+            Label("Server Settings", systemImage: "gearshape")
+        }
+    }
+
+    private var uploadConfirmationMessage: String {
+        let count = vm.shooters.count
+        var text = "Upload \(count) shooter\(count == 1 ? "" : "s") from \"\(vm.shootName)\" to the server?"
+        if vm.hasUnscoredTargets { text += " Some targets are not scored yet and will be uploaded as misses." }
+        return text
+    }
+
+    private func uploadToServer() async {
+        guard let client = serverSettings.client, let upload = vm.makeUpload(externalId: uploadExternalId) else {
+            exportMessage = ClayShootsError.notConfigured.localizedDescription
+            return
+        }
+        isUploading = true
+        exportMessage = "Uploading…"
+        defer { isUploading = false }
+        do {
+            _ = try await client.send(upload)
+            uploadExternalId = UUID().uuidString
+            exportMessage = "Uploaded \(upload.shooters.count) shooters to the server."
+        } catch ClayShootsError.server(409) {
+            uploadExternalId = UUID().uuidString
+            exportMessage = "This shoot was already uploaded."
+        } catch {
+            exportMessage = "Upload failed. " + error.localizedDescription
+        }
+    }
+
     private var exportButton: some View {
         Button {
             workbookToExport = ResultsWorkbook(data: vm.makeWorkbookData())
             exportMessage = nil
             isExporting = true
         } label: {
-            Label("Export to Excel", systemImage: "square.and.arrow.up")
+            Label("Export Spreadsheet", systemImage: "square.and.arrow.up")
         }
-        .help("Save the scores as an Excel workbook")
+        .help("Save the scores as a spreadsheet that opens in Numbers or Excel")
         .disabled(vm.shooters.isEmpty)
     }
 

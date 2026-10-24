@@ -287,6 +287,9 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				INFOPLIST_FILE = "Info-extra.plist";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "ClayShootScoreApp sends shoot results to your Clay Shoots server on the local network.";
 			};
 			name = Debug;
 		};
@@ -330,6 +333,9 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				INFOPLIST_FILE = "Info-extra.plist";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "ClayShootScoreApp sends shoot results to your Clay Shoots server on the local network.";
 			};
 			name = Release;
 		};
