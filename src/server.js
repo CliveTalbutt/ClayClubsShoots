@@ -259,6 +259,20 @@ app.post('/2fa/verify', authLimiter, wrap(async (req, res) => {
 
 app.post('/logout', (req, res) => req.session.destroy(() => { res.clearCookie('cs.sid'); res.redirect('/'); }));
 
+app.get('/account', needAuth, (req, res) => {
+  const u = res.locals.user;
+  const paymentsOn = payments.anyEnabled();
+  const end = u.sub_period_end ? u.sub_period_end * 1000 : null;
+  let state;
+  if (!paymentsOn) state = { label: 'Active', cls: 'ok', note: 'No payment provider is configured, so every account has full access.' };
+  else if (isActive(u)) state = { label: 'Active', cls: 'ok', note: `Paid until ${new Date(end).toLocaleDateString('en-GB')}.` };
+  else if (end) state = { label: 'Expired', cls: 'warn', note: `Ended on ${new Date(end).toLocaleDateString('en-GB')}. Renew to keep recording shoots.` };
+  else state = { label: 'Inactive', cls: 'warn', note: 'No plan yet. Choose one on the Dashboard to record shoots.' };
+  const lastPayment = db.prepare("SELECT provider, plan, created_at FROM payments WHERE user_id = ? AND status = 'paid' ORDER BY id DESC LIMIT 1").get(u.id);
+  const counts = db.prepare('SELECT COUNT(*) AS shoots FROM shoots WHERE user_id = ?').get(u.id);
+  res.render('account', { acct: u, state, paymentsOn, lastPayment, counts, hasKey: !!u.api_key_hash, hasPortal: payments.hasStripePortal && !!u.stripe_customer_id });
+});
+
 app.get('/dashboard', needAuth, (req, res) => {
   const shoots = db.prepare(`
     SELECT s.*, COUNT(DISTINCT r.shooter) AS shooters, COALESCE(SUM(r.score),0) AS total

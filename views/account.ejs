@@ -1,0 +1,28 @@
+<%- include('partials/head') %>
+<h1>Account</h1>
+
+<section class="card">
+  <h2>Signed in as</h2>
+  <p><strong><%= acct.email %></strong></p>
+  <p class="muted"><%= acct.club_name %> &middot; member since <%= String(acct.created_at).slice(0, 10) %> &middot; <%= counts.shoots %> shoot<%= counts.shoots === 1 ? '' : 's' %> recorded</p>
+</section>
+
+<section class="card">
+  <h2>Subscription</h2>
+  <p><span class="badge <%= state.cls %>"><%= state.label %></span> <%= state.note %></p>
+  <% if (lastPayment) { %><p class="muted">Last payment: <%= lastPayment.plan %> via <%= lastPayment.provider %> on <%= String(lastPayment.created_at).slice(0, 10) %></p><% } %>
+  <p>
+    <% if (paymentsOn) { %><a class="btn small" href="/dashboard">Plans and payment</a><% } %>
+    <% if (hasPortal) { %>
+      <form method="post" action="/billing/portal" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small secondary">Manage card subscription</button></form>
+    <% } %>
+  </p>
+</section>
+
+<section class="card">
+  <h2>Security</h2>
+  <p>Two-factor authentication: <span class="badge ok">On</span></p>
+  <p>iPhone app API key: <span class="badge <%= hasKey ? 'ok' : 'warn' %>"><%= hasKey ? 'Created' : 'Not created' %></span> <span class="muted">(keys are never shown again; create a new one on the Dashboard)</span></p>
+  <form method="post" action="/logout" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small secondary">Sign out</button></form>
+</section>
+<%- include('partials/foot') %>
