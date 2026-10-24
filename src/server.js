@@ -72,6 +72,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const payments = require('./payments')({ db, baseUrl: BASE_URL, needAuth: (q, s, n) => needAuth(q, s, n), wrap });
 app.use('/webhook', payments.webhooks);
+const mailer = require('./mailer')({ db, classify: (s) => classify(s), needAuth: (q, r, n) => needAuth(q, r, n), wrap });
 const social = require('./social')({ db, encrypt, decrypt, needAuth: (q, r, n) => needAuth(q, r, n), wrap });
 
 // ---- JSON API for the iPhone app (bearer key, no cookies/CSRF) ----
@@ -99,6 +100,7 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
   if (!Number.isInteger(b.stands) || b.stands < 1 || b.stands > 20) errors.push('stands must be an integer 1-20');
   const tps = b.targetsPerStand ?? 10;
   if (!Number.isInteger(tps) || tps < 1 || tps > 100) errors.push('targetsPerStand must be an integer 1-100');
+  if (Array.isArray(b.shooters) && b.shooters.some((s) => s && s.email != null && s.email !== '' && !mailer.validEmail(s.email))) errors.push('shooter email invalid');
   if (b.externalId != null && !str(b.externalId, 100)) errors.push('externalId invalid');
   if (!Array.isArray(b.shooters) || b.shooters.length < 1 || b.shooters.length > 500) errors.push('shooters must be an array of 1-500');
   else {
@@ -125,6 +127,7 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
         const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score) VALUES (?,?,?,?)');
         for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(existing.id, s.name.trim(), i + 1, sc));
       })();
+      mailer.saveEmails(user.id, b.shooters);
       return res.status(201).json({ id: existing.id, updated: true, url: `${BASE_URL}/shoots/${encodeId(user.id, existing.id)}` });
     }
     const id = db.transaction(() => {
@@ -135,6 +138,8 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
       for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(r.lastInsertRowid, s.name.trim(), i + 1, sc));
       return r.lastInsertRowid;
     })();
+    mailer.saveEmails(user.id, b.shooters);
+    if (b.emailResults !== false) mailer.sendShoot(user.id, id);
     if (b.postToSocial !== false) social.postShoot(user.id, id);
     res.status(201).json({ id, url: `${BASE_URL}/shoots/${encodeId(user.id, id)}` });
   } catch (e) {
@@ -455,6 +460,7 @@ app.post('/settings/api-key', needAuth, (req, res) => {
 
 app.use('/billing', payments.billing);
 app.use('/social', social.router);
+app.use('/shooters', mailer.router);
 
 app.use((err, req, res, next) => {
   console.error(err);

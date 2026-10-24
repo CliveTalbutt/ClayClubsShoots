@@ -1,0 +1,51 @@
+<%- include('partials/head') %>
+<h1>Shooters</h1>
+<p class="muted">Add an email address for any shooter. After each uploaded shoot, every shooter with an address is emailed their own results: position, score, stand by stand, how it compares with their recent average, and the top of the field. Only add addresses with the shooter's agreement.</p>
+
+<% if (msg) { %><p><span class="badge ok"><%= msg %></span></p><% } %>
+<% if (err) { %><p><span class="badge warn"><%= err %></span></p><% } %>
+<% if (!configured) { %><p><span class="badge warn">Outgoing email is not set up yet: add the SMTP_ settings to .env and restart.</span></p><% } %>
+
+<section class="card">
+  <form method="post" action="/shooters/auto" class="inline">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <input type="hidden" name="auto" value="<%= auto ? '0' : '1' %>">
+    Automatic emails after each upload: <span class="badge <%= auto ? 'ok' : 'warn' %>"><%= auto ? 'On' : 'Off' %></span>
+    <button class="btn small secondary"><%= auto ? 'Turn off' : 'Turn on' %></button>
+  </form>
+</section>
+
+<% if (!shooters.length) { %>
+  <p class="muted">No shooters yet. They appear here after the first upload.</p>
+<% } else { %>
+  <table class="results-table social-table">
+    <thead><tr><th>Shooter</th><th>Shoots</th><th>Email</th><th>Last email</th><th></th></tr></thead>
+    <tbody>
+      <% shooters.forEach(s => { %>
+        <tr>
+          <th scope="row"><span<%- shooterAttrs(s.name) %>><%= s.name %></span></th>
+          <td><%= s.shoots %></td>
+          <td>
+            <form method="post" action="/shooters/email" class="social-actions">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <input type="hidden" name="name" value="<%= s.name %>">
+              <input type="email" name="email" maxlength="200" value="<%= s.rec ? s.rec.email : '' %>" placeholder="name@example.com" aria-label="Email for <%= s.name %>">
+              <button class="btn small secondary">Save</button>
+            </form>
+          </td>
+          <td><%= s.rec && s.rec.last_status ? s.rec.last_status : '' %><% if (s.rec && s.rec.last_at) { %> <span class="muted">(<%= s.rec.last_at %> UTC)</span><% } %></td>
+          <td>
+            <% if (s.rec) { %>
+              <form method="post" action="/shooters/send" class="social-actions">
+                <input type="hidden" name="_csrf" value="<%= csrf %>">
+                <input type="hidden" name="name" value="<%= s.name %>">
+                <button class="btn small secondary">Send latest results</button>
+              </form>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+<% } %>
+<%- include('partials/foot') %>

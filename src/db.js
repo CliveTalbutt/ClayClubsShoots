@@ -115,4 +115,17 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'shoot_t
   db.exec('ALTER TABLE shoots ADD COLUMN shoot_time TEXT');
 }
 
+db.exec(`CREATE TABLE IF NOT EXISTS shooter_emails (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shooter_key TEXT NOT NULL,
+  shooter TEXT NOT NULL,
+  email TEXT NOT NULL,
+  last_status TEXT,
+  last_at TEXT,
+  PRIMARY KEY (user_id, shooter_key)
+)`);
+if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'email_results'").get()) {
+  db.exec('ALTER TABLE users ADD COLUMN email_results INTEGER NOT NULL DEFAULT 1');
+}
+
 module.exports = db;
