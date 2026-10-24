@@ -68,3 +68,9 @@ footer{text-align:center;color:var(--muted);padding:24px}
 .social-actions form { margin: 0; }
 .social-fields label, #social-form > label { display: block; margin-top: .6rem; }
 .social-fields input { display: block; width: 100%; }
+
+.nav-menu{position:relative;padding-bottom:6px;margin-bottom:-6px}
+.nav-sub{display:none;position:absolute;left:0;top:100%;z-index:30;min-width:160px;background:#0b121a;border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.nav-sub a{display:block;padding:8px 10px;border-radius:6px}
+.nav-sub a:hover,.nav-sub a:focus{background:var(--card)}
+.nav-menu:hover .nav-sub,.nav-menu:focus-within .nav-sub{display:block}

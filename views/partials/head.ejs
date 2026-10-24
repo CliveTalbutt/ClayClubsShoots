@@ -11,10 +11,14 @@
   <a class="brand" href="/">&#9678; Clay Shoots</a>
   <nav>
     <% if (user) { %>
-      <a href="/dashboard">Dashboard</a>
-      <a href="/results">Results</a>
-      <a href="/compare">Compare</a>
-      <a href="/leaderboard">Leaderboard</a>
+      <div class="nav-menu">
+        <a href="/dashboard">Dashboard &#9662;</a>
+        <div class="nav-sub">
+          <a href="/results">Results</a>
+          <a href="/compare">Compare</a>
+          <a href="/leaderboard">Leaderboard</a>
+        </div>
+      </div>
       <a href="/social">Social</a>
     <% } else { %>
       <a href="/login">Sign in</a>
