@@ -64,7 +64,11 @@ const app = express();
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '..', 'views'));
 app.set('trust proxy', 1);
-app.use(helmet());
+// Over plain http (local network testing) the default upgrade-insecure-requests and HSTS break CSS/JS.
+app.use(helmet(PROD ? {} : {
+  contentSecurityPolicy: { directives: { ...helmet.contentSecurityPolicy.getDefaultDirectives(), 'upgrade-insecure-requests': null } },
+  strictTransportSecurity: false,
+}));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ---- Stripe webhook (raw body, before JSON parsing) ----
