@@ -189,7 +189,7 @@ extension ShootViewModel {
         let targets = shooters.first?.scores.first?.count ?? Self.targetsPerStand
         var used = Set<String>()
         let entries = shooters.enumerated().map { index, shooter -> ShootUpload.Entry in
-            var base = shooter.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            var base = shooter.name.trimmingCharacters(in: .whitespacesAndNewlines).capitalized
             if base.isEmpty { base = "Shooter \(index + 1)" }
             base = String(base.prefix(70))
             var name = base
