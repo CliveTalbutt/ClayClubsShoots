@@ -84,6 +84,13 @@ app.get('/api/v1/ping', apiLimiter, (req, res) => {
   if (!isActive(user)) return res.status(402).json({ error: 'subscription_required' });
   res.json({ ok: true, club: user.club_name });
 });
+// Emails shooters and posts to social accounts, once per shoot, when it is complete.
+function notifyOnce(userId, shootId, flags) {
+  const claimed = db.prepare('UPDATE shoots SET notified = 1 WHERE id = ? AND user_id = ? AND notified = 0').run(shootId, userId);
+  if (!claimed.changes) return;
+  if (flags.email) mailer.sendShoot(userId, shootId);
+  if (flags.social) social.postShoot(userId, shootId);
+}
 app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res) => {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
   const user = m && db.prepare('SELECT * FROM users WHERE api_key_hash = ?').get(hashKey(m[1]));
@@ -91,6 +98,7 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
   if (!isActive(user)) return res.status(402).json({ error: 'subscription_required' });
 
   const b = req.body || {};
+  const flags = { email: b.emailResults !== false, social: b.postToSocial !== false };
   const errors = [];
   const str = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
   if (!str(b.name, 120)) errors.push('name required');
@@ -101,6 +109,7 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
   const tps = b.targetsPerStand ?? 10;
   if (!Number.isInteger(tps) || tps < 1 || tps > 100) errors.push('targetsPerStand must be an integer 1-100');
   if (Array.isArray(b.shooters) && b.shooters.some((s) => s && s.email != null && s.email !== '' && !mailer.validEmail(s.email))) errors.push('shooter email invalid');
+  if (b.complete != null && typeof b.complete !== 'boolean') errors.push('complete must be true or false');
   if (b.externalId != null && !str(b.externalId, 100)) errors.push('externalId invalid');
   if (!Array.isArray(b.shooters) || b.shooters.length < 1 || b.shooters.length > 500) errors.push('shooters must be an array of 1-500');
   else {
@@ -128,6 +137,7 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
         for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(existing.id, s.name.trim(), i + 1, sc));
       })();
       mailer.saveEmails(user.id, b.shooters);
+      if (b.complete === true) notifyOnce(user.id, existing.id, flags);
       return res.status(201).json({ id: existing.id, updated: true, url: `${BASE_URL}/shoots/${encodeId(user.id, existing.id)}` });
     }
     const id = db.transaction(() => {
@@ -139,8 +149,8 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
       return r.lastInsertRowid;
     })();
     mailer.saveEmails(user.id, b.shooters);
-    if (b.emailResults !== false) mailer.sendShoot(user.id, id);
-    if (b.postToSocial !== false) social.postShoot(user.id, id);
+    // Clients that stream live results send complete:false until the shoot ends
+    if (b.complete !== false) notifyOnce(user.id, id, flags);
     res.status(201).json({ id, url: `${BASE_URL}/shoots/${encodeId(user.id, id)}` });
   } catch (e) {
     if (String(e.code).startsWith('SQLITE_CONSTRAINT')) return res.status(409).json({ error: 'duplicate_externalId' });

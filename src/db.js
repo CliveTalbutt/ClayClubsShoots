@@ -114,6 +114,11 @@ if (inMemory && process.env.SEED_EXAMPLE_DATA === '1') {
 if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'shoot_time'").get()) {
   db.exec('ALTER TABLE shoots ADD COLUMN shoot_time TEXT');
 }
+// Emails and social posts go out once, when a shoot is first reported complete
+if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'notified'").get()) {
+  db.exec('ALTER TABLE shoots ADD COLUMN notified INTEGER NOT NULL DEFAULT 0');
+  db.exec('UPDATE shoots SET notified = 1');
+}
 
 db.exec(`CREATE TABLE IF NOT EXISTS shooter_emails (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
