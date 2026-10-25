@@ -122,6 +122,11 @@ struct RosterView: View {
                     vm.shooters.contains { $0.name.lowercased() == entry.name.lowercased() }
                 }.map(\.id))
                 await load()
+                // Follow website changes while the list is open.
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(5))
+                    await load()
+                }
             }
         }
     }
@@ -136,12 +141,9 @@ struct RosterView: View {
         do {
             roster = try await client.fetchRoster()
             message = nil
-            if let data = try? JSONEncoder().encode(roster) { UserDefaults.standard.set(data, forKey: Self.cacheKey) }
+            RosterCache.store(roster)
             // Keep ticks only for people who are still listed.
-            let ids = Set(roster.map(\.id))
-            ticked = ticked.intersection(ids).union(roster.filter { entry in
-                vm.shooters.contains { $0.name.lowercased() == entry.name.lowercased() }
-            }.map(\.id))
+            ticked = ticked.intersection(Set(roster.map(\.id)))
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
@@ -171,6 +173,13 @@ struct RosterView: View {
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
+    }
+}
+
+enum RosterCache {
+    static let key = "rosterCache"
+    static func store(_ roster: [RosterShooter]) {
+        if let data = try? JSONEncoder().encode(roster) { UserDefaults.standard.set(data, forKey: key) }
     }
 }
 

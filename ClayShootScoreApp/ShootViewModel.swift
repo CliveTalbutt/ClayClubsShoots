@@ -87,6 +87,25 @@ class ShootViewModel {
         }
     }
 
+    /// Applies the website's current roster to shooters already in the shoot:
+    /// colours follow member/guest changes, emails follow edits, and anyone whose
+    /// membership expired or who was removed is greyed out (and dropped if they
+    /// have not scored yet). Scored results are never removed.
+    func syncRoster(_ roster: [RosterShooter]) {
+        let byName = Dictionary(roster.map { ($0.name.lowercased(), $0) }, uniquingKeysWith: { a, _ in a })
+        for index in shooters.indices.reversed() {
+            let key = shooters[index].name.lowercased()
+            guard kinds[key] != nil else { continue }
+            if let entry = byName[key] {
+                kinds[key] = entry.kind
+                if emails[key] != entry.email { setEmail(entry.email, for: entry.name) }
+            } else {
+                let scored = shooters[index].scores.contains { $0.contains { $0 >= 0 } }
+                if scored { kinds[key] = "expired" } else { removeShooter(at: index) }
+            }
+        }
+    }
+
     func email(for name: String) -> String? {
         let e = emails[name.trimmingCharacters(in: .whitespaces).lowercased()]
         return (e?.isEmpty ?? true) ? nil : e

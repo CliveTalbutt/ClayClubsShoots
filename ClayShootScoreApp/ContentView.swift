@@ -97,6 +97,7 @@ struct ContentView: View {
             }
             // Once names have been entered, hand focus back so scoring keys work.
             .task(id: liveSignature) { await syncLive() }
+            .task { await followRoster() }
             .onChange(of: vm.isAddingShooter) { _, isAdding in
                 if !isAdding { isScoreTableFocused = true }
             }
@@ -246,6 +247,18 @@ struct ContentView: View {
             HoldScoreButton(title: "MISS", color: .red, systemImage: "xmark") { vm.recordMiss() }
         }
         .frame(height: isCompact ? 90 : 120)
+    }
+
+    /// Keeps the shoot in step with membership changes made on the website.
+    private func followRoster() async {
+        while !Task.isCancelled {
+            if scenePhase == .active, let client = serverSettings.client,
+               let roster = try? await client.fetchRoster() {
+                vm.syncRoster(roster)
+                RosterCache.store(roster)
+            }
+            try? await Task.sleep(for: .seconds(8))
+        }
     }
 
     private var rosterButton: some View {
