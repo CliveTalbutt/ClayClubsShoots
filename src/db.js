@@ -142,6 +142,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS shooter_emails (
   last_at TEXT,
   PRIMARY KEY (user_id, shooter_key)
 )`);
+if (!db.prepare("SELECT 1 FROM pragma_table_info('roster') WHERE name = 'is_admin'").get()) {
+  db.exec('ALTER TABLE roster ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
+}
 // One-off: shooters who already had an email address become current members.
 if (!hadRoster) {
   db.exec(`INSERT OR IGNORE INTO roster (user_id, name, name_key, email, kind, status)

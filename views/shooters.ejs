@@ -23,6 +23,7 @@
     <input name="name" maxlength="60" placeholder="Name" required aria-label="Name">
     <input type="email" name="email" maxlength="200" placeholder="name@example.com" required aria-label="Email">
     <select name="kind" aria-label="Member or guest"><option value="member">Member</option><option value="guest">Guest</option></select>
+    <label class="inline"><input type="checkbox" name="is_admin" value="1"> Admin</label>
     <button class="btn small">Add to roster</button>
   </form>
   <% if (roster.length) { %>
@@ -33,11 +34,12 @@
         <tr>
           <th scope="row"><span class="<%= cls %>"><%= r.name %></span></th>
           <td><%= r.email %></td>
-          <td><span class="<%= cls %>"><%= r.status === 'expired' ? 'Expired ' + r.kind : (r.kind === 'member' ? 'Member' : 'Guest') %></span></td>
+          <td><span class="<%= cls %>"><%= r.status === 'expired' ? 'Expired ' + r.kind : (r.kind === 'member' ? 'Member' : 'Guest') %></span><% if (r.is_admin) { %> <span class="badge ok">Admin</span><% } %></td>
           <td class="social-actions">
             <% if (r.status === 'current') { %>
               <form method="post" action="/shooters/roster/<%= r.id %>/kind" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="kind" value="<%= r.kind === 'member' ? 'guest' : 'member' %>"><button class="btn small secondary">Make <%= r.kind === 'member' ? 'guest' : 'member' %></button></form>
               <% if (r.kind === 'member') { %>
+              <form method="post" action="/shooters/roster/<%= r.id %>/admin" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="admin" value="<%= r.is_admin ? '0' : '1' %>"><button class="btn small secondary"><%= r.is_admin ? 'Remove admin' : 'Make admin' %></button></form>
               <form method="post" action="/shooters/roster/<%= r.id %>/status" class="inline" data-confirm="Mark this membership as expired? They will no longer be offered in the app."><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="status" value="expired"><button class="btn small secondary">Expire membership</button></form>
               <% } %>
             <% } else { %>

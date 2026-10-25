@@ -1,5 +1,5 @@
 // Polls for new/changed results and refreshes the page when they arrive.
-const watched = ['/results', '/leaderboard', '/dashboard', '/shoots/'];
+const watched = ['/results', '/leaderboard', '/dashboard', '/shoots/', '/shooters'];
 
 if (watched.some((p) => location.pathname.startsWith(p))) {
   let last = null;

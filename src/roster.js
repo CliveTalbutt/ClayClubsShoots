@@ -18,7 +18,7 @@ module.exports = function createRoster({ db, needAuth, mailer }) {
     return { name, email, errors };
   }
 
-  const present = (r) => ({ id: r.id, name: r.name, email: r.email, kind: r.kind });
+  const present = (r) => ({ id: r.id, name: r.name, email: r.email, kind: r.kind, isAdmin: r.is_admin === 1 });
 
   // What the app shows: guests and current members only.
   function listCurrent(userId) {
@@ -30,7 +30,7 @@ module.exports = function createRoster({ db, needAuth, mailer }) {
   }
 
   // Adds a shooter to this club's roster only; the same person may exist in other clubs.
-  function add(userId, body, kind = 'guest') {
+  function add(userId, body, kind = 'guest', admin = false) {
     const { name, email, errors } = validate(body);
     if (errors.length) return { status: 400, body: { error: 'validation', details: errors } };
     const existing = db.prepare('SELECT * FROM roster WHERE user_id = ? AND name_key = ? AND email = ?').get(userId, key(name), email);
@@ -40,7 +40,7 @@ module.exports = function createRoster({ db, needAuth, mailer }) {
       }
       return { status: 200, body: { shooter: present(existing), existing: true } };
     }
-    const r = db.prepare('INSERT INTO roster (user_id, name, name_key, email, kind) VALUES (?,?,?,?,?)').run(userId, name, key(name), email, kind);
+    const r = db.prepare('INSERT INTO roster (user_id, name, name_key, email, kind, is_admin) VALUES (?,?,?,?,?,?)').run(userId, name, key(name), email, kind, kind === 'member' && admin ? 1 : 0);
     mailer.saveEmails(userId, [{ name, email }]);
     return { status: 201, body: { shooter: present(db.prepare('SELECT * FROM roster WHERE id = ?').get(r.lastInsertRowid)) } };
   }
@@ -51,7 +51,7 @@ module.exports = function createRoster({ db, needAuth, mailer }) {
 
   router.post('/add', needAuth, (req, res) => {
     const kind = req.body.kind === 'member' ? 'member' : 'guest';
-    const r = add(req.session.userId, req.body, kind);
+    const r = add(req.session.userId, req.body, kind, req.body.is_admin === '1');
     if (r.status === 201) return back(res, `Added ${r.body.shooter.name} as a ${kind}.`);
     if (r.status === 200) return back(res, null, 'That shooter is already on the roster.');
     back(res, null, (r.body.details || ['Could not add shooter.']).join('; '));
@@ -61,8 +61,17 @@ module.exports = function createRoster({ db, needAuth, mailer }) {
     const r = mine(req);
     if (!r) return back(res, null, 'Unknown shooter.');
     const kind = req.body.kind === 'member' ? 'member' : 'guest';
-    db.prepare('UPDATE roster SET kind = ? WHERE id = ?').run(kind, r.id);
+    db.prepare('UPDATE roster SET kind = ?, is_admin = CASE WHEN ? = \'member\' THEN is_admin ELSE 0 END WHERE id = ?').run(kind, kind, r.id);
     back(res, `${r.name} is now a ${kind}.`);
+  });
+
+  router.post('/:id/admin', needAuth, (req, res) => {
+    const r = mine(req);
+    if (!r) return back(res, null, 'Unknown shooter.');
+    if (r.kind !== 'member') return back(res, null, 'Only members can be admins.');
+    const on = req.body.admin === '1' ? 1 : 0;
+    db.prepare('UPDATE roster SET is_admin = ? WHERE id = ?').run(on, r.id);
+    back(res, on ? `${r.name} is now an admin.` : `${r.name} is no longer an admin.`);
   });
 
   router.post('/:id/status', needAuth, (req, res) => {
