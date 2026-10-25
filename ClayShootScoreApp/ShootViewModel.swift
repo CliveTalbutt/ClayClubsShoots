@@ -531,10 +531,25 @@ class ShootViewModel {
         currentTarget = 0
     }
 
+    /// A stand is locked once every shooter has scored every target on it; its scores can then no longer be changed.
+    func isStandLocked(_ stand: Int) -> Bool {
+        !shooters.isEmpty && shooters.indices.allSatisfy {
+            shooters[$0].scores.indices.contains(stand) && firstUnscoredTarget(ofShooterAt: $0, stand: stand) == nil
+        }
+    }
+
     /// Wipes a shooter's scores, either on one stand or on every stand, and moves
     /// scoring to that shooter at the first cleared stand so it can be shot again.
     func clearScores(ofShooterAt index: Int, stand: Int? = nil) {
         guard shooters.indices.contains(index) else { return }
+        if let stand, isStandLocked(stand) {
+            errorMessage = "Stand \(stand + 1) is complete for all shooters and can no longer be changed."
+            return
+        }
+        if stand == nil, let locked = shooters[index].scores.indices.first(where: { isStandLocked($0) }) {
+            errorMessage = "Stand \(locked + 1) is complete for all shooters and can no longer be changed."
+            return
+        }
         if let stand {
             guard shooters[index].scores.indices.contains(stand) else {
                 errorMessage = "There is no stand \(stand + 1) in this shoot."

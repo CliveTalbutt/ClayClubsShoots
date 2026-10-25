@@ -371,6 +371,7 @@ struct ScoreTableView: View {
         case 0: next = -1       // cross -> not shot
         default: next = 1       // not shot -> tick
         }
+        guard !vm.isStandLocked(stand) else { return }
         vm.shooters[shooterIndex].scores[stand][target] = next
     }
 }
