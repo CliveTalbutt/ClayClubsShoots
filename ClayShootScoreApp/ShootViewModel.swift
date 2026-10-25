@@ -11,6 +11,7 @@ import Observation
 import Speech
 import AVFoundation
 import AudioToolbox
+import UIKit
 import os
 #if canImport(UIKit)
 import UIKit
@@ -1495,6 +1496,7 @@ class ShootViewModel {
         shooters[index].scores[currentStand][currentTarget] = value
         // Confirmation beep for every recorded score, spoken or manual.
         AudioServicesPlaySystemSound(1057)
+        UINotificationFeedbackGenerator().notificationOccurred(value == 1 ? .success : .warning)
 
         currentTarget += 1
 

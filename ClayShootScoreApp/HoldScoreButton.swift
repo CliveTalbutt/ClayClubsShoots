@@ -34,7 +34,6 @@ struct HoldScoreButton: View {
         .animation(.easeOut(duration: 0.15), value: fired)
         .contentShape(RoundedRectangle(cornerRadius: 20))
         .onLongPressGesture(minimumDuration: holdTime, maximumDistance: 60, perform: {
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
             fired = true
             action()
             Task {
