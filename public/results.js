@@ -32,7 +32,8 @@ if (resultsTable && resultsFilter) {
       const ascending = header.getAttribute('aria-sort') !== 'ascending';
       resultsTable.querySelectorAll('thead th').forEach((th) => {
         th.setAttribute('aria-sort', 'none');
-        th.querySelector('.results-sort span').textContent = '↕';
+        const arrow = th.querySelector('.results-sort span');
+        if (arrow) arrow.textContent = '↕';
       });
       header.setAttribute('aria-sort', ascending ? 'ascending' : 'descending');
       button.querySelector('span').textContent = ascending ? '↑' : '↓';
