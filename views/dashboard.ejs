@@ -27,17 +27,17 @@
     <% if (allowance.limited) { %>
     <div class="allowance">
       <h3>Your allowance</h3>
-      <p>Covers <strong><%= allowance.members %> member<%= allowance.members === 1 ? '' : 's' %></strong> and <strong><%= allowance.guests %> guest<%= allowance.guests === 1 ? '' : 's' %></strong> (<%= allowance.price %> a year). In use: <%= allowance.usedMembers %> members, <%= allowance.usedGuests %> guests.
+      <p>Covers <strong><%= allowance.members %> member<%= allowance.members === 1 ? '' : 's' %></strong> and <strong><%= allowance.guests %> guest<%= allowance.guests === 1 ? '' : 's' %></strong> (<%= allowance.price %> per annum). In use: <%= allowance.usedMembers %> members, <%= allowance.usedGuests %> guests.
         <% if (allowance.usedMembers >= allowance.members || allowance.usedGuests >= allowance.guests) { %><span class="badge warn">At the limit</span><% } %></p>
       <form method="post" action="/billing/allowance" class="inline">
         <input type="hidden" name="_csrf" value="<%= csrf %>">
         <label>Members <input type="number" name="members" id="est-members" min="<%= Math.max(1, allowance.usedMembers) %>" max="5000" value="<%= allowance.nextMembers %>" required></label>
         <label>Guests <input type="number" name="guests" id="est-guests" min="<%= allowance.usedGuests %>" max="5000" value="<%= allowance.nextGuests %>" required></label>
-        <span>= <strong id="est-price">&pound;0.00</strong> a year</span>
+        <span>= <strong id="est-price">&pound;0.00</strong> per annum</span>
         <button class="btn small secondary">Update allowance</button>
       </form>
-      <p class="muted">&pound;1 per member, 50p per guest. A bigger allowance is charged pro rata for the rest of this year; a smaller one applies at renewal. It takes effect once paid.</p>
-      <% if (allowance.pending) { %><p><span class="badge warn">Awaiting payment</span> Requested: <%= allowance.nextMembers %> members, <%= allowance.nextGuests %> guests (<%= allowance.nextPrice %> a year).</p><% } %>
+      <p class="muted">&pound;1 per member and 50p per guest, per annum. A bigger allowance is charged pro rata for the rest of this year; a smaller one applies at renewal. It takes effect once paid.</p>
+      <% if (allowance.pending) { %><p><span class="badge warn">Awaiting payment</span> Requested: <%= allowance.nextMembers %> members, <%= allowance.nextGuests %> guests (<%= allowance.nextPrice %> per annum).</p><% } %>
     </div>
     <script src="/estimate.js" defer></script>
     <% } %>

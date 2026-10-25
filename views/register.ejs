@@ -8,10 +8,10 @@
   <label>Email<input type="email" name="email" required autocomplete="email" value="<%= f.email || '' %>"></label>
   <fieldset class="estimate">
     <legend>How many shooters?</legend>
-    <p class="muted">Your subscription is <strong>&pound;1 per member</strong> and <strong>50p per guest</strong> for the year. Give your best estimate &ndash; you can add more later.</p>
+    <p class="muted">Your subscription is <strong>&pound;1 per member per annum</strong> and <strong>50p per guest per annum</strong>. Give your best estimate &ndash; you can add more later.</p>
     <label>Members<input type="number" name="est_members" id="est-members" min="1" max="5000" required value="<%= f.est_members || '' %>"></label>
     <label>Guests<input type="number" name="est_guests" id="est-guests" min="0" max="5000" required value="<%= f.est_guests || '0' %>"></label>
-    <p class="plan-price">Annual subscription: <strong id="est-price">&pound;0.00</strong></p>
+    <p class="plan-price">Subscription: <strong id="est-price">&pound;0.00</strong> per annum</p>
   </fieldset>
   <label>Password (12+ characters)<input type="password" name="password" required minlength="12" autocomplete="new-password"></label>
   <button class="btn">Continue</button>

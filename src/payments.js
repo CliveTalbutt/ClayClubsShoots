@@ -13,7 +13,7 @@ const GRACE = 3 * 86400;
 
 // Prices are per head (see allowance.js), so the amount is worked out for each club by planFor().
 const PLANS = {
-  annual: { key: 'annual', label: 'Annual subscription', pence: 0, months: 12, recurring: false, blurb: 'one payment, 12 months of access' },
+  annual: { key: 'annual', label: 'Annual subscription', pence: 0, months: 12, recurring: false, blurb: 'per annum, one payment for 12 months of access' },
   topup: { key: 'topup', label: 'Add shooters', pence: 0, months: 0, recurring: false, blurb: 'one payment for the rest of this subscription year' },
 };
 const allowanceLib = require('./allowance');
@@ -59,7 +59,7 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
     if (!base) return null;
     const { cur, next } = sizeOf(user);
     let pence;
-    let blurb = `${next.m} member${next.m === 1 ? '' : 's'} + ${next.g} guest${next.g === 1 ? '' : 's'} for 12 months`;
+    let blurb = `${next.m} member${next.m === 1 ? '' : 's'} + ${next.g} guest${next.g === 1 ? '' : 's'}, per annum`;
     if (key === 'topup') {
       const left = Math.max(0, (user.sub_period_end || 0) - now());
       pence = Math.max(50, Math.ceil(Math.max(0, allowanceLib.price(next.m, next.g) - allowanceLib.price(cur.m, cur.g)) * left / (365 * 86400)));
