@@ -111,3 +111,5 @@ footer{text-align:center;color:var(--muted);padding:24px}
 
 .acting-banner{background:#f59e0b;color:#111;padding:.5rem 1rem;display:flex;gap:1rem;align-items:center;justify-content:center;flex-wrap:wrap}
 .acting-banner form{margin:0}
+.club-row>summary{cursor:pointer;padding:.25rem 0}
+.club-row[open]>summary{margin-bottom:.75rem}

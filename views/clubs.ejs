@@ -4,9 +4,8 @@
 
 <% if (!clubs.length) { %><p class="muted">No clubs yet.</p><% } %>
 <% clubs.forEach(function (c) { %>
-<section class="card">
-  <h2><%= c.name %></h2>
-  <p class="muted"><%= c.accounts.length %> account<%= c.accounts.length === 1 ? '' : 's' %> &middot; <%= c.shoots.length %> shoot<%= c.shoots.length === 1 ? '' : 's' %></p>
+<details class="card club-row">
+  <summary><strong><%= c.name %></strong> <span class="muted">&middot; <%= c.accounts.length %> account<%= c.accounts.length === 1 ? '' : 's' %> &middot; <%= c.shoots.length %> shoot<%= c.shoots.length === 1 ? '' : 's' %></span></summary>
   <table>
     <thead><tr><th>Account</th><th>Role</th><th>Shoots</th><th>Shooters</th><th>Latest shoot</th><th></th></tr></thead>
     <tbody>
@@ -43,6 +42,6 @@
     </table>
   </details>
   <% } %>
-</section>
+</details>
 <% }) %>
 <%- include('partials/foot') %>
