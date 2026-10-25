@@ -90,7 +90,7 @@
                 <% const medal = ['🥇', '🥈', '🥉'][shooter.place - 1]; %>
                 <% if (medal) { %><span class="medal" role="img" aria-label="<%= ['1st', '2nd', '3rd'][shooter.place - 1] %> place" title="<%= ['1st', '2nd', '3rd'][shooter.place - 1] %> place"><%= medal %></span><% } %>
               </td>
-              <% const cls = shooter.stats.cpsa; %>
+              <% const cls = avg == null ? null : (() => { const k = cpsaClasses.find((c) => avg >= c.min); return { name: k.name, icon: k.icon, rank: cpsaClasses.indexOf(k), basis: 'this shoot' }; })(); %>
               <td class="num" data-sort-value="<%= cls ? cls.rank : '' %>" data-export="<%= cls ? cls.name : '' %>">
                 <% if (cls) { %><span class="class-badge cpsa-hint" tabindex="0" data-cpsa="<%= cls.name %>" data-basis="<%= cls.basis %>"><%= cls.icon %> <%= cls.name %></span><% } else { %>–<% } %>
               </td>
