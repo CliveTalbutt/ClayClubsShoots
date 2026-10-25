@@ -78,6 +78,8 @@ nonisolated struct ClayShootsClient: Sendable {
     let apiKey: String
     /// SHA-256 (hex) of the server's public key. When set, only a server holding that key is trusted.
     var pinnedFingerprint: String = ""
+    /// Testing only: accept any certificate (including self-signed) when no fingerprint is set.
+    var trustSelfSigned: Bool = false
 
     /// Turns what the user typed into a base URL. Only encrypted connections are used:
     /// a missing scheme or `http://` becomes `https://`.
@@ -156,7 +158,7 @@ nonisolated struct ClayShootsClient: Sendable {
         guard request.url?.scheme == "https" else {
             throw ClayShootsError.untrustedServer("Refusing to send over an unencrypted connection.")
         }
-        let pinned = PinnedSession.shared(for: pinnedFingerprint)
+        let pinned = PinnedSession.shared(for: pinnedFingerprint, trustAny: trustSelfSigned)
         do {
             let (data, response) = try await pinned.session.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw ClayShootsError.server(0) }
@@ -171,7 +173,7 @@ nonisolated struct ClayShootsClient: Sendable {
                 switch urlError.code {
                 case .serverCertificateUntrusted, .serverCertificateHasUnknownRoot, .serverCertificateHasBadDate,
                      .serverCertificateNotYetValid, .secureConnectionFailed, .clientCertificateRejected:
-                    throw ClayShootsError.untrustedServer("The server's certificate is not trusted. If it is self-signed, enter its key fingerprint in Server Settings. Nothing was sent.")
+                    throw ClayShootsError.untrustedServer("The server's certificate is not trusted. If it is self-signed, enter its key fingerprint in Server Settings (or switch on the testing option). Nothing was sent.")
                 default: break
                 }
             }
@@ -197,6 +199,7 @@ nonisolated struct ClayShootsClient: Sendable {
 final class ClayShootsSettings {
     private static let urlKey = "clayShootsServerURL"
     private static let pinKey = "clayShootsServerPin"
+    private static let trustKey = "clayShootsTrustSelfSigned"
     private static let keychainService = "ClayShootsAPIKey"
 
     var serverURL: String {
@@ -212,7 +215,13 @@ final class ClayShootsSettings {
         didSet { UserDefaults.standard.set(pinnedFingerprint, forKey: Self.pinKey) }
     }
 
+    /// Testing only: lets the app connect to a server with a self-signed certificate without a fingerprint.
+    var trustSelfSigned: Bool {
+        didSet { UserDefaults.standard.set(trustSelfSigned, forKey: Self.trustKey) }
+    }
+
     init() {
+        trustSelfSigned = UserDefaults.standard.bool(forKey: Self.trustKey)
         pinnedFingerprint = UserDefaults.standard.string(forKey: Self.pinKey) ?? ""
         serverURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""
         apiKey = Self.loadKey()
@@ -236,7 +245,7 @@ final class ClayShootsSettings {
     var client: ClayShootsClient? {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty, let url = ClayShootsClient.normalisedURL(serverURL) else { return nil }
-        return ClayShootsClient(baseURL: url, apiKey: key, pinnedFingerprint: pinnedFingerprint)
+        return ClayShootsClient(baseURL: url, apiKey: key, pinnedFingerprint: pinnedFingerprint, trustSelfSigned: trustSelfSigned)
     }
 
     private static var query: [String: Any] {
@@ -347,22 +356,25 @@ nonisolated final class PinnedSession: NSObject, URLSessionDelegate, URLSessionT
         text.lowercased().filter { $0.isHexDigit }
     }
 
-    static func shared(for fingerprint: String) -> PinnedSession {
+    static func shared(for fingerprint: String, trustAny: Bool = false) -> PinnedSession {
         let pin = normalised(fingerprint)
+        let cacheKey = trustAny ? pin + "|any" : pin
         lock.lock(); defer { lock.unlock() }
-        if let existing = cache[pin] { return existing }
-        let made = PinnedSession(pin: pin)
-        cache[pin] = made
+        if let existing = cache[cacheKey] { return existing }
+        let made = PinnedSession(pin: pin, trustAny: trustAny)
+        cache[cacheKey] = made
         return made
     }
 
     private let pin: String
+    private let trustAny: Bool
     private let stateLock = NSLock()
     private var pinFailed = false
     private(set) var session: URLSession!
 
-    private init(pin: String) {
+    private init(pin: String, trustAny: Bool) {
         self.pin = pin
+        self.trustAny = trustAny
         super.init()
         let config = URLSessionConfiguration.ephemeral
         config.tlsMinimumSupportedProtocolVersion = .TLSv12
@@ -391,9 +403,11 @@ nonisolated final class PinnedSession: NSObject, URLSessionDelegate, URLSessionT
             completionHandler(.performDefaultHandling, nil)
             return
         }
-        // No pin: the certificate must chain to a trusted authority and match the host name.
+        // No pin: normally the certificate must chain to a trusted authority and match the host name.
+        // With the testing switch on, any certificate is accepted (still encrypted, but not authenticated).
         guard !pin.isEmpty else {
-            completionHandler(.performDefaultHandling, nil)
+            if trustAny { completionHandler(.useCredential, URLCredential(trust: trust)) }
+            else { completionHandler(.performDefaultHandling, nil) }
             return
         }
         if let leaf = (SecTrustCopyCertificateChain(trust) as? [SecCertificate])?.first,

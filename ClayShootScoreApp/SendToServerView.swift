@@ -36,10 +36,11 @@ struct SendToServerView: View {
                         #if os(iOS)
                         .textInputAutocapitalization(.never)
                         #endif
+                    Toggle("Testing: trust self-signed certificate", isOn: $settings.trustSelfSigned)
                 } header: {
                     Text("Clay Shoots server")
                 } footer: {
-                    Text("Only encrypted (https) connections are used. Create the key on the website's Dashboard under API key. If the server uses its own certificate, paste the fingerprint it prints when it starts: the app then trusts only that server and refuses any impostor.")
+                    Text("Only encrypted (https) connections are used. Create the key on the website's Dashboard under API key. If the server uses its own certificate, paste the fingerprint it prints when it starts: the app then trusts only that server and refuses any impostor. The testing switch skips that check so a self-signed server works with no fingerprint; the connection is still encrypted but the server is not verified, so turn it off for real use.")
                 }
 
                 Section {
