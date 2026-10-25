@@ -128,12 +128,16 @@ nonisolated struct ClayShootsClient: Sendable {
     }
 
     func send(_ upload: ShootUpload) async throws -> ShootUploadReceipt {
+        try await send(body: JSONEncoder().encode(upload))
+    }
+
+    func send(body: Data) async throws -> ShootUploadReceipt {
         var request = URLRequest(url: baseURL.appending(path: "api/v1/shoots"))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(upload)
+        request.httpBody = body
         let (data, response) = try await perform(request)
         try Self.check(response, data: data, expected: 201)
         return try JSONDecoder().decode(ShootUploadReceipt.self, from: data)
@@ -280,5 +284,21 @@ extension ShootViewModel {
     /// True while some target on the scoresheet has not been scored.
     var hasUnscoredTargets: Bool {
         shooters.contains { !$0.isComplete }
+    }
+}
+
+/// Uploads waiting for the server, kept on disk (latest version per shoot) so
+/// nothing is lost if the connection drops or the app is closed.
+enum UploadOutbox {
+    private static let key = "uploadOutbox"
+    private static var all: [String: Data] {
+        get { UserDefaults.standard.dictionary(forKey: key) as? [String: Data] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: key) }
+    }
+    static var pending: [(id: String, body: Data)] { all.map { ($0.key, $0.value) } }
+    static var count: Int { all.count }
+    static func save(id: String, body: Data) { all[id] = body }
+    static func clear(id: String, ifBody body: Data) {
+        if all[id] == body { all[id] = nil }
     }
 }

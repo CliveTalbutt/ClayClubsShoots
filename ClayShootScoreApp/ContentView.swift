@@ -103,6 +103,7 @@ struct ContentView: View {
             // Once names have been entered, hand focus back so scoring keys work.
             .task(id: liveSignature) { await syncLive() }
             .task { await followRoster() }
+            .task { await flushOutbox() }
             .onChange(of: vm.isAddingShooter) { _, isAdding in
                 if !isAdding { isScoreTableFocused = true }
             }
@@ -116,6 +117,7 @@ struct ContentView: View {
                     vm.stopListeningForBackground()
                 case .active:
                     vm.resumeListening()
+                    Task { await flushOutbox() }
                 default:
                     break
                 }
@@ -356,31 +358,48 @@ struct ContentView: View {
     private func syncLive() async {
         guard !liveSignature.isEmpty else {
             exportMessage = serverSettings.client == nil ? "Live upload is off: add the server in Server Settings." : nil
+            if serverSettings.client != nil, UploadOutbox.count > 0 { await flushOutbox() }
             return
         }
-        guard let client = serverSettings.client, let upload = vm.makeUpload(externalId: vm.shootSessionId) else { return }
+        guard let upload = vm.makeUpload(externalId: vm.shootSessionId),
+              let body = try? JSONEncoder().encode(upload) else { return }
+        UploadOutbox.save(id: upload.externalId, body: body)
         try? await Task.sleep(for: .milliseconds(400))
-        var delay = 10
-        while !Task.isCancelled {
-            do {
-                _ = try await client.send(upload)
-                exportMessage = "Live: \(upload.complete ? "shoot complete and" : "scores") synced at \(Date.now.formatted(date: .omitted, time: .shortened))"
-                return
-            } catch ClayShootsError.invalidKey {
-                exportMessage = "Live upload stopped: the API key was rejected."
-                return
-            } catch ClayShootsError.subscriptionRequired {
-                exportMessage = "Live upload stopped: the account needs a subscription."
-                return
-            } catch ClayShootsError.validation(let details) {
-                exportMessage = "Live upload rejected: " + details.joined(separator: ", ")
-                return
-            } catch {
+        await flushOutbox()
+    }
+
+    /// Sends everything waiting in the outbox, retrying until the server
+    /// answers. Each entry is the latest full scoresheet for a shoot, so a
+    /// later change simply replaces an unsent one and nothing is lost.
+    private func flushOutbox() async {
+        var delay = 5
+        while !Task.isCancelled, let client = serverSettings.client, UploadOutbox.count > 0 {
+            var failed = false
+            for item in UploadOutbox.pending {
                 if Task.isCancelled { return }
-                exportMessage = "Live upload failed, retrying…"
-                try? await Task.sleep(for: .seconds(delay))
-                delay = min(delay * 2, 60)
+                do {
+                    _ = try await client.send(body: item.body)
+                    UploadOutbox.clear(id: item.id, ifBody: item.body)
+                    exportMessage = "Live: synced at \(Date.now.formatted(date: .omitted, time: .shortened))"
+                } catch ClayShootsError.invalidKey {
+                    exportMessage = "Live upload stopped: the API key was rejected. Scores are kept on this phone."
+                    return
+                } catch ClayShootsError.subscriptionRequired {
+                    exportMessage = "Live upload stopped: the account needs a subscription. Scores are kept on this phone."
+                    return
+                } catch ClayShootsError.validation(let details) {
+                    exportMessage = "Live upload rejected: " + details.joined(separator: ", ")
+                    UploadOutbox.clear(id: item.id, ifBody: item.body)
+                } catch {
+                    if Task.isCancelled { return }
+                    failed = true
+                    exportMessage = "Server unreachable: \(UploadOutbox.count) update(s) saved on this phone, retrying…"
+                    break
+                }
             }
+            if !failed { return }
+            try? await Task.sleep(for: .seconds(delay))
+            delay = min(delay * 2, 20)
         }
     }
 
