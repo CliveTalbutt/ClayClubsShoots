@@ -197,7 +197,7 @@ struct ContentView: View {
     }
 
     /// The iPhone toolbar keeps the two buttons used during a shoot visible and
-    /// tucks the rest into a single overflow menu, so nothing is squeezed off.
+    /// shows the rest as icon buttons, so nothing is squeezed off.
     @ToolbarContentBuilder
     private var compactControlPanel: some ToolbarContent {
         // The shoot name and date sit on the same line as the buttons, so no
@@ -212,24 +212,16 @@ struct ContentView: View {
             rosterButton
             addShootersButton
             modeButton
-            listenButton
-
+            serverSettingsButton
             Menu {
-                serverSettingsButton
-
-                Menu {
-                    standsPicker
-                } label: {
-                    Label("Stands: \(vm.numberOfStands)", systemImage: "square.grid.3x3")
-                }
-
-                Button {
-                    isShowingHelp = true
-                } label: {
-                    Label("Voice Commands", systemImage: "questionmark.circle")
-                }
+                standsPicker
             } label: {
-                Label("More", systemImage: "ellipsis.circle")
+                Label("Stands: \(vm.numberOfStands)", systemImage: "square.grid.3x3")
+            }
+            Button {
+                isShowingHelp = true
+            } label: {
+                Label("Voice Commands", systemImage: "questionmark.circle")
             }
         }
     }
