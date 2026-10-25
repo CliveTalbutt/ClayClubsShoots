@@ -1,0 +1,48 @@
+<%- include('partials/head') %>
+<h1>Shoot clubs</h1>
+<p class="muted">Each club has its own accounts, shoots and shooters. Open an account to see the site exactly as that user does; a banner lets you return here.</p>
+
+<% if (!clubs.length) { %><p class="muted">No clubs yet.</p><% } %>
+<% clubs.forEach(function (c) { %>
+<section class="card">
+  <h2><%= c.name %></h2>
+  <p class="muted"><%= c.accounts.length %> account<%= c.accounts.length === 1 ? '' : 's' %> &middot; <%= c.shoots.length %> shoot<%= c.shoots.length === 1 ? '' : 's' %></p>
+  <table>
+    <thead><tr><th>Account</th><th>Role</th><th>Shoots</th><th>Shooters</th><th>Latest shoot</th><th></th></tr></thead>
+    <tbody>
+    <% c.accounts.forEach(function (a) { %>
+      <tr>
+        <td><%= a.email %></td>
+        <td><span class="role-badge"><%= a.role %></span></td>
+        <td><%= a.shoots %></td>
+        <td><%= a.shooters %></td>
+        <td><%= a.last_shoot || '-' %></td>
+        <td>
+          <% if (user.id === a.id) { %><span class="muted">current</span><% } else { %>
+          <form method="post" action="/admin/clubs/open" class="inline">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <input type="hidden" name="id" value="<%= a.id %>">
+            <button class="btn small">Open</button>
+          </form>
+          <% } %>
+        </td>
+      </tr>
+    <% }) %>
+    </tbody>
+  </table>
+  <% if (c.shoots.length) { %>
+  <details>
+    <summary>Shoots (<%= c.shoots.length %>)</summary>
+    <table>
+      <thead><tr><th>Date</th><th>Shoot</th><th>Venue</th><th>Stands</th><th>Shooters</th></tr></thead>
+      <tbody>
+      <% c.shoots.forEach(function (s) { %>
+        <tr><td><%= s.shoot_date %></td><td><%= s.name %></td><td><%= s.venue || '' %></td><td><%= s.stands %></td><td><%= s.shooters %></td></tr>
+      <% }) %>
+      </tbody>
+    </table>
+  </details>
+  <% } %>
+</section>
+<% }) %>
+<%- include('partials/foot') %>

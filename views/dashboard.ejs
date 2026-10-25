@@ -1,6 +1,14 @@
 <%- include('partials/head') %>
 <h1><%= user.club_name %></h1>
 
+<% if (realSuper) { %>
+<section class="card">
+  <h2>Shoot clubs</h2>
+  <p class="muted">See every shoot club, its accounts, shoots and shooters, and open any club as its user.</p>
+  <a class="btn" href="/admin/clubs">Manage shoot clubs</a>
+</section>
+<% } %>
+
 <% if (user.is_super === 1) { %>
 <section class="card">
   <h2>Subscription</h2>

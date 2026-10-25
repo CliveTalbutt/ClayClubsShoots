@@ -17,6 +17,7 @@
         <div class="nav-sub">
           <a href="/results">Results</a>
           <a href="/leaderboard">Leaderboard</a>
+          <% if (realSuper) { %><a href="/admin/clubs">Shoot clubs</a><% } %>
         </div>
       </div>
       <div class="nav-menu nav-menu-right">
@@ -33,4 +34,6 @@
     <% } %>
   </nav>
 </header>
+<% if (acting) { %><div class="acting-banner">Viewing as <strong><%= user.club_name %></strong> (<%= user.email %>, <%= userRole %>)
+  <form method="post" action="/admin/return"><input type="hidden" name="_csrf" value="<%= csrf %>"><button type="submit" class="btn small">Back to super admin</button></form></div><% } %>
 <main>

@@ -223,6 +223,12 @@ app.use((req, res, next) => {
     const m = u.is_super === 1 ? null : db.prepare("SELECT kind, is_admin FROM roster WHERE user_id = ? AND lower(email) = lower(?) AND status = 'current' LIMIT 1").get(u.id, u.email);
     res.locals.userRole = u.is_super === 1 ? 'Super admin' : (m && m.kind === 'member' && m.is_admin !== 1 ? 'Member' : 'Admin');
   }
+  // A super admin can open any club account; session.superId remembers who they really are.
+  const realId = req.session.superId || req.session.userId;
+  const real = realId ? (realId === req.session.userId ? res.locals.user : db.prepare('SELECT * FROM users WHERE id = ?').get(realId)) : null;
+  res.locals.realSuper = !!(real && real.is_super === 1);
+  res.locals.acting = !!(req.session.superId && res.locals.realSuper);
+  if (req.session.superId && !res.locals.realSuper) { delete req.session.superId; }
   res.locals.when = (s) => s.shoot_date + (s.shoot_time ? ` ${s.shoot_time}` : '');
   res.locals.cpsaClasses = CPSA_CLASSES;
   res.locals.eid = (id) => encodeId(req.session.userId, id);
@@ -322,6 +328,43 @@ function accountData(u) {
 app.get('/account', needAuth, (req, res) => {
   const u = res.locals.user;
   res.render('account', { msg: req.query.saved ? 'Changes saved.' : null, error: null, form: null, acct: u, ...accountData(u), backupMsg: req.query.backup || null });
+});
+
+const needRealSuper = (req, res, next) => (res.locals.realSuper ? next() : res.status(404).send('Not found'));
+
+app.get('/admin/clubs', needAuth, needRealSuper, (req, res) => {
+  const accounts = db.prepare(`SELECT u.id, u.email, u.is_super,
+      (SELECT COUNT(*) FROM shoots s WHERE s.user_id = u.id) AS shoots,
+      (SELECT MAX(shoot_date) FROM shoots s WHERE s.user_id = u.id) AS last_shoot,
+      (SELECT COUNT(*) FROM roster r WHERE r.user_id = u.id AND r.status = 'current') AS people,
+      (SELECT COUNT(DISTINCT shooter) FROM results x JOIN shoots s ON s.id = x.shoot_id WHERE s.user_id = u.id) AS shooters,
+      (SELECT kind FROM roster r WHERE r.user_id = u.id AND lower(r.email) = lower(u.email) AND r.status = 'current' LIMIT 1) AS rkind,
+      (SELECT is_admin FROM roster r WHERE r.user_id = u.id AND lower(r.email) = lower(u.email) AND r.status = 'current' LIMIT 1) AS radmin,
+      u.club_name FROM users u ORDER BY u.club_name COLLATE NOCASE, u.email`).all();
+  const clubs = new Map();
+  for (const a of accounts) {
+    a.role = a.is_super === 1 ? 'Super admin' : (a.rkind === 'member' && a.radmin !== 1 ? 'Member' : 'Admin');
+    if (!clubs.has(a.club_name)) clubs.set(a.club_name, { name: a.club_name, accounts: [], shoots: [] });
+    clubs.get(a.club_name).accounts.push(a);
+  }
+  const shootsOf = db.prepare('SELECT id, name, venue, shoot_date, stands, (SELECT COUNT(DISTINCT shooter) FROM results WHERE shoot_id = shoots.id) AS shooters FROM shoots WHERE user_id = ? ORDER BY shoot_date DESC LIMIT 50');
+  for (const c of clubs.values()) {
+    const best = c.accounts.reduce((m, a) => (a.shoots > m.shoots ? a : m), c.accounts[0]);
+    c.shoots = shootsOf.all(best.id);
+  }
+  res.render('clubs', { clubs: [...clubs.values()] });
+});
+app.post('/admin/clubs/open', needAuth, needRealSuper, (req, res) => {
+  const id = Number(req.body.id);
+  const target = Number.isInteger(id) && db.prepare('SELECT id FROM users WHERE id = ?').get(id);
+  if (!target) return res.redirect('/admin/clubs');
+  if (!req.session.superId) req.session.superId = req.session.userId;
+  req.session.userId = target.id;
+  res.redirect('/dashboard');
+});
+app.post('/admin/return', needAuth, (req, res) => {
+  if (req.session.superId && res.locals.realSuper) { req.session.userId = req.session.superId; delete req.session.superId; }
+  res.redirect('/admin/clubs');
 });
 
 const needSuper = (req, res, next) => (res.locals.user && res.locals.user.is_super === 1 ? next() : res.status(404).send('Not found'));
