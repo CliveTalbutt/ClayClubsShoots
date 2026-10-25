@@ -24,7 +24,7 @@
       var cls = c === '1' ? 'clay hit' : c === '0' ? 'clay miss' : 'clay none';
       var chip = el('span', c === '1' ? '\u2713' : c === '0' ? '\u2717' : '\u2013', cls);
       chip.title = 'Clay ' + (i + 1) + ': ' + (c === '1' ? 'hit' : c === '0' ? 'miss' : 'not shot');
-      row.append(el('span', String(i + 1), 'clay-num'), chip);
+      row.append(chip);
     });
     pop.replaceChildren(head, sub, row);
     if (!d.pattern) pop.append(el('p', 'Order of hits not recorded for this shoot.', 'muted'));
