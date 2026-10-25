@@ -65,7 +65,7 @@ struct ScoreTableView: View {
         horizontalSizeClass == .compact || verticalSizeClass == .compact
     }
 
-    private var nameWidth: CGFloat { isCompact ? 100 : 120 }
+    private var nameWidth: CGFloat { isCompact ? 150 : 170 }
     private var tablePadding: CGFloat { isCompact ? 10 : 16 }
     private var headerFont: Font { isCompact ? .caption.weight(.semibold) : .subheadline.weight(.semibold) }
     private let targetCellWidth: CGFloat = 10.5
@@ -99,6 +99,17 @@ struct ScoreTableView: View {
 
     /// Keeps the name column fixed at the left edge while the stands scroll under it.
     private var pinOffset: CGFloat { max(0, visibleRect.minX) }
+
+    /// Opaque backing for the pinned column; it reaches left over the table padding and
+    /// right over the gap so scrolled stands are fully hidden behind it.
+    private func pinnedBackground(highlight: Bool) -> some View {
+        ZStack {
+            Color(.systemBackground)
+            if highlight { Color.accentColor.opacity(0.15) }
+        }
+        .padding(.leading, -tablePadding)
+        .padding(.trailing, -6)
+    }
 
     var body: some View {
         scrollingTable
@@ -219,7 +230,7 @@ struct ScoreTableView: View {
             Text("Shooter")
                 .font(headerFont)
                 .frame(width: nameWidth, alignment: .leading)
-                .background(Color(.systemBackground))
+                .background(pinnedBackground(highlight: false))
                 .offset(x: pinOffset)
                 .zIndex(1)
 
@@ -288,12 +299,7 @@ struct ScoreTableView: View {
                 }
             }
             .frame(width: nameWidth, alignment: .leading)
-            .background(
-                ZStack {
-                    Color(.systemBackground)
-                    if isCurrentShooter { Color.accentColor.opacity(0.15) }
-                }
-            )
+            .background(pinnedBackground(highlight: isCurrentShooter))
             .offset(x: pinOffset)
             .zIndex(1)
             .contentShape(Rectangle())
