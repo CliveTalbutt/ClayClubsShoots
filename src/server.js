@@ -73,7 +73,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 const payments = require('./payments')({ db, baseUrl: BASE_URL, needAuth: (q, s, n) => needAuth(q, s, n), wrap });
 app.use('/webhook', payments.webhooks);
 const mailer = require('./mailer')({ db, classify: (s) => classify(s), needAuth: (q, r, n) => needAuth(q, r, n), wrap });
-const roster = require('./roster')({ db, needAuth: (q, r, n) => needAuth(q, r, n), mailer });
+const roster = require('./roster')({ db, needAuth: (q, r, n) => needAuth(q, r, n), mailer, baseUrl: BASE_URL, wrap });
 const backup = require('./backup')({ db, dir: path.join(__dirname, '..', 'data', 'backups') });
 if (process.env.DB_IN_MEMORY !== '1') backup.schedule();
 const social = require('./social')({ db, encrypt, decrypt, needAuth: (q, r, n) => needAuth(q, r, n), wrap });
@@ -104,6 +104,7 @@ app.post('/api/v1/shooters', apiLimiter, express.json({ limit: '10kb' }), (req, 
   if (!user) return;
   const kind = req.body && req.body.kind === 'member' ? 'member' : 'guest';
   const r = roster.add(user.id, req.body, kind, !!(req.body && req.body.isAdmin));
+  if (r.status === 201) roster.sendVerification(user.id, r.body.shooter.id).catch(() => {});
   res.status(r.status).json(r.body);
 });
 // Emails shooters and posts to social accounts, once per shoot, when it is complete.
@@ -495,6 +496,10 @@ app.post('/settings/api-key', needAuth, (req, res) => {
 
 app.use('/billing', payments.billing);
 app.use('/social', social.router);
+app.get('/verify-email/:token', rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: true, legacyHeaders: false }), (req, res) => {
+  const r = roster.verifyToken(req.params.token);
+  res.status(r ? 200 : 400).render('verify', { ok: !!r, name: r ? r.name : null, club: r ? db.prepare('SELECT club_name FROM users WHERE id = ?').get(r.user_id)?.club_name : null });
+});
 app.use('/shooters/roster', roster.router);
 app.use('/shooters', needAuth, (req, res, next) => { res.locals.roster = roster.listAll(req.session.userId); next(); }, mailer.router);
 

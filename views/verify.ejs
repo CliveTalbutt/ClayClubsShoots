@@ -1,0 +1,11 @@
+<%- include('partials/head') %>
+<section class="card">
+<% if (ok) { %>
+  <h1>Email confirmed</h1>
+  <p><span class="badge ok">Verified</span> Thanks <%= name %>. <%= club %> can now send your shoot results to this address.</p>
+<% } else { %>
+  <h1>Link not valid</h1>
+  <p><span class="badge warn">Expired or already used</span> Ask the club to send you a new verification email.</p>
+<% } %>
+</section>
+<%- include('partials/foot') %>

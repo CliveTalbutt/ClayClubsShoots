@@ -1,12 +1,18 @@
 // Per-club roster of registered shooters: members and guests, current or expired.
+const crypto = require('crypto');
 const express = require('express');
+
+const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+const TOKEN_DAYS = 7;
+const RESEND_MINUTES = 5;
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const NAME_RE = /^[\p{L}][\p{L}'’. -]{0,59}$/u;
 
 const cleanName = (raw) => String(raw || '').trim().replace(/\s+/g, ' ')
   .toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (m, p, c) => p + c.toUpperCase());
 
-module.exports = function createRoster({ db, needAuth, mailer }) {
+module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) {
   const key = (n) => String(n).trim().toLowerCase();
 
   function validate(body) {
@@ -18,7 +24,7 @@ module.exports = function createRoster({ db, needAuth, mailer }) {
     return { name, email, errors };
   }
 
-  const present = (r) => ({ id: r.id, name: r.name, email: r.email, kind: r.kind, isAdmin: r.is_admin === 1 });
+  const present = (r) => ({ id: r.id, name: r.name, email: r.email, kind: r.kind, isAdmin: r.is_admin === 1, verified: !!r.email_verified_at });
 
   // What the app shows: guests and current members only.
   function listCurrent(userId) {
@@ -45,6 +51,41 @@ module.exports = function createRoster({ db, needAuth, mailer }) {
     return { status: 201, body: { shooter: present(db.prepare('SELECT * FROM roster WHERE id = ?').get(r.lastInsertRowid)) } };
   }
 
+  // Emails the shooter a link to confirm the address belongs to them.
+  async function sendVerification(userId, id) {
+    const r = db.prepare('SELECT * FROM roster WHERE id = ? AND user_id = ?').get(id, userId);
+    if (!r) return { ok: false, message: 'Unknown shooter.' };
+    if (r.email_verified_at) return { ok: false, message: 'Already verified.' };
+    if (r.verify_sent_at && Date.now() - Date.parse(r.verify_sent_at + 'Z') < RESEND_MINUTES * 60e3) {
+      return { ok: false, message: `A verification email was sent less than ${RESEND_MINUTES} minutes ago.` };
+    }
+    const token = crypto.randomBytes(32).toString('hex');
+    const club = db.prepare('SELECT club_name FROM users WHERE id = ?').get(userId)?.club_name || 'Clay Shoots';
+    const link = `${baseUrl}/verify-email/${token}`;
+    try {
+      await mailer.sendRaw(r.email, {
+        subject: `Please confirm your email address for ${club}`,
+        text: `Hi ${r.name},\n\n${club} would like to send you your shoot results by email. Please confirm this is your address:\n\n${link}\n\nThe link works for ${TOKEN_DAYS} days. If you did not expect this, ignore this message.`,
+        html: `<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:560px;margin:auto;color:#1f2937"><h2>Confirm your email</h2><p>Hi ${esc(r.name)}, ${esc(club)} would like to send you your shoot results by email.</p><p><a href="${esc(link)}" style="background:#16a34a;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Confirm my email address</a></p><p style="color:#6b7280;font-size:12px">The link works for ${TOKEN_DAYS} days. If you did not expect this, ignore this message.</p></div>`,
+      });
+    } catch (e) {
+      return { ok: false, message: e.code === 'not_configured' ? 'Outgoing email is not set up yet (SMTP settings in .env).' : 'The email could not be sent.' };
+    }
+    db.prepare("UPDATE roster SET verify_token_hash = ?, verify_sent_at = datetime('now') WHERE id = ?").run(sha(token), r.id);
+    return { ok: true, message: `Verification email sent to ${r.email}.` };
+  }
+
+  // Public: followed from the email. Matching the token proves control of the mailbox.
+  function verifyToken(token) {
+    if (!/^[0-9a-f]{64}$/.test(String(token))) return null;
+    const r = db.prepare('SELECT * FROM roster WHERE verify_token_hash = ?').get(sha(token));
+    if (!r) return null;
+    if (r.email_verified_at) return r;
+    if (Date.now() - Date.parse(r.verify_sent_at + 'Z') > TOKEN_DAYS * 86400e3) return null;
+    db.prepare("UPDATE roster SET email_verified_at = datetime('now'), verify_token_hash = NULL WHERE id = ?").run(r.id);
+    return db.prepare('SELECT * FROM roster WHERE id = ?').get(r.id);
+  }
+
   const router = express.Router();
   const back = (res, msg, err) => res.redirect('/shooters?' + (err ? 'err=' : 'msg=') + encodeURIComponent(err || msg) + '#roster');
   const mine = (req) => db.prepare('SELECT * FROM roster WHERE id = ? AND user_id = ?').get(Number(req.params.id) || 0, req.session.userId);
@@ -53,10 +94,18 @@ module.exports = function createRoster({ db, needAuth, mailer }) {
     const admin = req.body.kind === 'admin';
     const kind = admin || req.body.kind === 'member' ? 'member' : 'guest';
     const r = add(req.session.userId, req.body, kind, admin);
+    if (r.status === 201) sendVerification(req.session.userId, r.body.shooter.id).catch(() => {});
     if (r.status === 201) return back(res, `Added ${r.body.shooter.name} as ${admin ? 'an admin member' : 'a ' + kind}.`);
     if (r.status === 200) return back(res, null, 'That shooter is already on the roster.');
     back(res, null, (r.body.details || ['Could not add shooter.']).join('; '));
   });
+
+  router.post('/:id/verify', needAuth, wrap(async (req, res) => {
+    const r = mine(req);
+    if (!r) return back(res, null, 'Unknown shooter.');
+    const out = await sendVerification(req.session.userId, r.id);
+    out.ok ? back(res, out.message) : back(res, null, out.message);
+  }));
 
   router.post('/:id/kind', needAuth, (req, res) => {
     const r = mine(req);
@@ -90,5 +139,5 @@ module.exports = function createRoster({ db, needAuth, mailer }) {
     back(res, `Removed ${r.name} from the roster. Past results are kept.`);
   });
 
-  return { router, add, listCurrent, listAll };
+  return { router, add, listCurrent, listAll, sendVerification, verifyToken };
 };

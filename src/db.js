@@ -152,6 +152,9 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'is_super
 if (!db.prepare('SELECT 1 FROM users WHERE is_super = 1').get()) {
   db.prepare('UPDATE users SET is_super = 1 WHERE lower(email) = ?').run((process.env.SUPER_ADMIN_EMAIL || 'clive.talbutt@gmail.com').toLowerCase());
 }
+for (const [col, def] of [['email_verified_at', 'TEXT'], ['verify_token_hash', 'TEXT'], ['verify_sent_at', 'TEXT']]) {
+  if (!db.prepare("SELECT 1 FROM pragma_table_info('roster') WHERE name = ?").get(col)) db.exec(`ALTER TABLE roster ADD COLUMN ${col} ${def}`);
+}
 // One-off: shooters who already had an email address become current members.
 if (!hadRoster) {
   db.exec(`INSERT OR IGNORE INTO roster (user_id, name, name_key, email, kind, status)

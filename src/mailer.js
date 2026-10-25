@@ -305,5 +305,11 @@ ${notes.map((n) => `<p>${esc(n)}</p>`).join('')}
     res.redirect('/shooters?' + (status.startsWith('Sent') ? 'msg=' : 'err=') + encodeURIComponent(status));
   }));
 
-  return { router, sendShoot, saveEmails, validEmail, compose, summary, historySummary, composeHistory };
+  // Sends a plain message (used for address verification); throws if email is not set up.
+  async function sendRaw(to, { subject, text, html }) {
+    if (!configured()) throw Object.assign(new Error('Outgoing email is not configured.'), { code: 'not_configured' });
+    await getTransport().sendMail({ from: process.env.MAIL_FROM || process.env.SMTP_USER || 'Clay Shoots <no-reply@clayshoots.local>', to, subject, text, html });
+  }
+
+  return { configured, sendRaw, router, sendShoot, saveEmails, validEmail, compose, summary, historySummary, composeHistory };
 };

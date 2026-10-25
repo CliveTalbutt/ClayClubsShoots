@@ -33,7 +33,11 @@
         <tr>
           <th scope="row"><span class="<%= cls %>"<%- shooterAttrs(r.name) %>><%= r.name %></span></th>
           <td><%= r.shoots %></td>
-          <td><%= r.email %></td>
+          <td><%= r.email %>
+            <% if (r.email_verified_at) { %> <span class="badge ok" title="Verified <%= r.email_verified_at %> UTC">&#10003; Verified</span>
+            <% } else { %> <span class="badge warn">Unverified</span>
+              <form method="post" action="/shooters/roster/<%= r.id %>/verify" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small secondary"><%= r.verify_sent_at ? 'Resend' : 'Verify' %></button></form>
+            <% } %></td>
           <td><span class="<%= cls %>"><%= r.status === 'expired' ? 'Expired ' + r.kind : (r.kind === 'member' ? 'Member' : 'Guest') %></span><% if (r.is_admin) { %> <span class="badge ok">Admin</span><% } %></td>
           <td class="social-actions roster-actions">
             <% if (r.status === 'current') { %>
