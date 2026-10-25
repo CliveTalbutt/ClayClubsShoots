@@ -262,6 +262,10 @@ app.use((req, res, next) => {
   res.locals.user = req.session.userId
     ? db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId) : null;
   res.locals.active = isActive(res.locals.user);
+  // The most recently active shoot is shown in the header.
+  res.locals.currentShoot = res.locals.user
+    ? db.prepare('SELECT name FROM shoots WHERE user_id = ? ORDER BY COALESCE(updated_at, \'\') DESC, id DESC LIMIT 1').get(res.locals.user.id)?.name || null
+    : null;
   // Logins are club accounts: the super admin is you, a club's own login is its admin, and a login
   // whose email is a non-admin member on that club's membership list is shown as a member.
   res.locals.userRole = null;
