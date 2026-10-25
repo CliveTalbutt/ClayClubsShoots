@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var isShowingHelp = false
     @State private var isShowingSettings = false
     @State private var isShowingRoster = false
+    @State private var isShowingStands = false
     @State private var serverSettings = ClayShootsSettings()
 
     /// Keyboard focus sits on the score table so the Y and X keys score the
@@ -172,13 +173,8 @@ struct ContentView: View {
         ToolbarSpacer(.fixed)
 
         ToolbarItem {
-            Menu {
-                standsPicker
-            } label: {
-                Label("^[\(vm.numberOfStands) Stand](inflect: true)", systemImage: "square.grid.3x3")
-                    .labelStyle(.titleAndIcon)
-            }
-            .help("Choose how many stands are in the shoot")
+            standsButton
+                .help("Choose how many stands are in the shoot")
         }
 
         ToolbarSpacer(.fixed)
@@ -217,7 +213,7 @@ struct ContentView: View {
             Menu {
                 serverSettingsButton
 
-                standsPicker
+                standsButton
 
                 Button {
                     isShowingHelp = true
@@ -357,11 +353,15 @@ struct ContentView: View {
         }
     }
 
-    private var standsPicker: some View {
-        Picker("Number of stands", selection: $vm.numberOfStands) {
-            ForEach(ShootViewModel.standOptions, id: \.self) { count in
-                Text("^[\(count) stand](inflect: true)")
-            }
+    private var standsButton: some View {
+        Button {
+            isShowingStands = true
+        } label: {
+            Label("^[\(vm.numberOfStands) Stand](inflect: true)", systemImage: "square.grid.3x3")
+        }
+        .sheet(isPresented: $isShowingStands) {
+            StandsSheet(vm: vm)
+                .presentationDetents([.height(260)])
         }
     }
 

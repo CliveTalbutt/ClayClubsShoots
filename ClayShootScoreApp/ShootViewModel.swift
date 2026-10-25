@@ -32,7 +32,7 @@ class ShootViewModel {
     /// The number of stands a new shoot starts with.
     static let defaultNumberOfStands = 5
     /// The stand counts that can be chosen in the control panel.
-    static let standOptions = Array(1...20)
+    static let standOptions = Array(1...25)
     /// The number of targets shot on each stand.
     static let targetsPerStand = 10
     /// The most shooters a shoot can have.
