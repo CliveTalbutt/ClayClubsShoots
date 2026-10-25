@@ -120,6 +120,19 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'notifie
   db.exec('UPDATE shoots SET notified = 1');
 }
 
+const hadRoster = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'roster'").get();
+db.exec(`CREATE TABLE IF NOT EXISTS roster (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  name_key TEXT NOT NULL,
+  email TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'guest' CHECK (kind IN ('member', 'guest')),
+  status TEXT NOT NULL DEFAULT 'current' CHECK (status IN ('current', 'expired')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, name_key, email)
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS shooter_emails (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   shooter_key TEXT NOT NULL,
@@ -129,6 +142,11 @@ db.exec(`CREATE TABLE IF NOT EXISTS shooter_emails (
   last_at TEXT,
   PRIMARY KEY (user_id, shooter_key)
 )`);
+// One-off: shooters who already had an email address become current members.
+if (!hadRoster) {
+  db.exec(`INSERT OR IGNORE INTO roster (user_id, name, name_key, email, kind, status)
+    SELECT user_id, shooter, shooter_key, lower(email), 'member', 'current' FROM shooter_emails`);
+}
 if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'email_results'").get()) {
   db.exec('ALTER TABLE users ADD COLUMN email_results INTEGER NOT NULL DEFAULT 1');
 }

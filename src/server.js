@@ -73,6 +73,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 const payments = require('./payments')({ db, baseUrl: BASE_URL, needAuth: (q, s, n) => needAuth(q, s, n), wrap });
 app.use('/webhook', payments.webhooks);
 const mailer = require('./mailer')({ db, classify: (s) => classify(s), needAuth: (q, r, n) => needAuth(q, r, n), wrap });
+const roster = require('./roster')({ db, needAuth: (q, r, n) => needAuth(q, r, n), mailer });
 const social = require('./social')({ db, encrypt, decrypt, needAuth: (q, r, n) => needAuth(q, r, n), wrap });
 
 // ---- JSON API for the iPhone app (bearer key, no cookies/CSRF) ----
@@ -83,6 +84,24 @@ app.get('/api/v1/ping', apiLimiter, (req, res) => {
   if (!user) return res.status(401).json({ error: 'invalid_api_key' });
   if (!isActive(user)) return res.status(402).json({ error: 'subscription_required' });
   res.json({ ok: true, club: user.club_name });
+});
+// Roster of registered shooters for the club that owns the API key.
+const apiUser = (req, res) => {
+  const m = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization || '');
+  const user = m && db.prepare('SELECT * FROM users WHERE api_key_hash = ?').get(hashKey(m[1]));
+  if (!user) { res.status(401).json({ error: 'invalid_api_key' }); return null; }
+  if (!isActive(user)) { res.status(402).json({ error: 'subscription_required' }); return null; }
+  return user;
+};
+app.get('/api/v1/shooters', apiLimiter, (req, res) => {
+  const user = apiUser(req, res);
+  if (user) res.set('Cache-Control', 'no-store').json({ club: user.club_name, shooters: roster.listCurrent(user.id) });
+});
+app.post('/api/v1/shooters', apiLimiter, express.json({ limit: '10kb' }), (req, res) => {
+  const user = apiUser(req, res);
+  if (!user) return;
+  const r = roster.add(user.id, req.body, 'guest');
+  res.status(r.status).json(r.body);
 });
 // Emails shooters and posts to social accounts, once per shoot, when it is complete.
 function notifyOnce(userId, shootId, flags) {
@@ -458,7 +477,8 @@ app.post('/settings/api-key', needAuth, (req, res) => {
 
 app.use('/billing', payments.billing);
 app.use('/social', social.router);
-app.use('/shooters', mailer.router);
+app.use('/shooters/roster', roster.router);
+app.use('/shooters', needAuth, (req, res, next) => { res.locals.roster = roster.listAll(req.session.userId); next(); }, mailer.router);
 
 app.use((err, req, res, next) => {
   console.error(err);

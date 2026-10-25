@@ -47,6 +47,7 @@ th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line)}th{co
 [hidden]{display:none!important}
 .num{text-align:right;font-variant-numeric:tabular-nums}
 .muted{color:var(--muted)}.error{color:var(--bad)}
+.tag-member{color:#4ade80;font-weight:600}.tag-guest{color:#f87171;font-weight:600}.tag-expired{color:#9ca3af;font-weight:600}
 .badge{padding:2px 10px;border-radius:99px;font-size:.8rem;font-weight:600}.badge.ok{background:#14532d;color:#86efac}.badge.warn{background:#78350f;color:#fcd34d}
 pre{background:#0f1720;padding:12px;border-radius:8px;overflow-x:auto}
 .qr{display:block;margin:12px auto;background:#fff;padding:8px;border-radius:8px}
