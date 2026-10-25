@@ -82,9 +82,6 @@ struct ContentView: View {
                 if vm.isManualMode, !vm.shooters.isEmpty, !vm.isAddingShooter, !vm.isComplete {
                     manualButtons
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                } else if !vm.isManualMode, !vm.shooters.isEmpty, !vm.isAddingShooter, !vm.isComplete {
-                    listeningPanel
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .padding(.horizontal, isCompact ? 12 : 20)
@@ -232,6 +229,9 @@ struct ContentView: View {
             } label: {
                 Label("Voice Commands", systemImage: "questionmark.circle")
             }
+            if !vm.isManualMode {
+                listenButton
+            }
         }
     }
 
@@ -243,30 +243,6 @@ struct ContentView: View {
                   systemImage: vm.isManualMode ? "waveform" : "hand.tap.fill")
         }
         .help(vm.isManualMode ? "Manual scoring is on. Tap to switch to voice" : "Voice scoring is on. Tap to switch to manual buttons")
-    }
-
-    /// Voice mode's counterpart to the HIT/MISS buttons: a large microphone that pulses as sounds are heard.
-    private var listeningPanel: some View {
-        Button {
-            vm.resumeListening()
-        } label: {
-            VStack(spacing: 6) {
-                Image(systemName: vm.isListening ? "mic.fill" : "mic.slash.fill")
-                    .font(.system(size: isCompact ? 44 : 56))
-                    .symbolEffect(.bounce, value: vm.heardWordCount)
-                    .contentTransition(.symbolEffect(.replace))
-                    .scaleEffect(vm.isHearingSpeech ? 1.15 : 1)
-                Text(vm.isListening ? (vm.isHearingSpeech ? "Hearing you…" : "Listening") : "Not listening. Tap to retry")
-                    .font(.headline)
-            }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: isCompact ? 90 : 120)
-            .background(micTint.gradient, in: RoundedRectangle(cornerRadius: 20))
-        }
-        .buttonStyle(.plain)
-        .animation(.easeOut(duration: 0.2), value: vm.isHearingSpeech)
-        .accessibilityLabel(vm.isListening ? "Listening for scores" : "Not listening. Tap to retry")
     }
 
     /// Large hold-to-score buttons shown at the bottom in manual mode.
@@ -323,7 +299,7 @@ struct ContentView: View {
                 .contentTransition(.symbolEffect(.replace))
         }
         .help(vm.isListening ? "Listening for spoken scores and commands" : "Listening has stopped. Tap to try again")
-        .buttonStyle(.glassProminent)
+        .labelStyle(.iconOnly)
         .tint(micTint)
         .animation(.easeOut(duration: 0.2), value: vm.isHearingSpeech)
     }
