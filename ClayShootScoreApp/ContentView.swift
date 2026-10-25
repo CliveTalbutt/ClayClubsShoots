@@ -608,10 +608,11 @@ private struct SyncStatusLabel: View {
             .font(.footnote)
             .foregroundStyle(lit ? Color.accentColor : Color.secondary)
             .onChange(of: text) { _, _ in
-                var instant = Transaction()
-                instant.disablesAnimations = true
-                withTransaction(instant) { lit = true }
-                withAnimation(.easeOut(duration: 0.9)) { lit = false }
+                lit = true
+                Task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    withAnimation(.easeOut(duration: 0.9)) { lit = false }
+                }
             }
     }
 }
