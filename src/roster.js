@@ -50,9 +50,10 @@ module.exports = function createRoster({ db, needAuth, mailer }) {
   const mine = (req) => db.prepare('SELECT * FROM roster WHERE id = ? AND user_id = ?').get(Number(req.params.id) || 0, req.session.userId);
 
   router.post('/add', needAuth, (req, res) => {
-    const kind = req.body.kind === 'member' ? 'member' : 'guest';
-    const r = add(req.session.userId, req.body, kind, req.body.is_admin === '1');
-    if (r.status === 201) return back(res, `Added ${r.body.shooter.name} as a ${kind}.`);
+    const admin = req.body.kind === 'admin';
+    const kind = admin || req.body.kind === 'member' ? 'member' : 'guest';
+    const r = add(req.session.userId, req.body, kind, admin);
+    if (r.status === 201) return back(res, `Added ${r.body.shooter.name} as ${admin ? 'an admin member' : 'a ' + kind}.`);
     if (r.status === 200) return back(res, null, 'That shooter is already on the roster.');
     back(res, null, (r.body.details || ['Could not add shooter.']).join('; '));
   });
