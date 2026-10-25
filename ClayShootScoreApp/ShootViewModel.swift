@@ -145,6 +145,17 @@ class ShootViewModel {
 
     /// True while the audio engine is running and speech is being recognised.
     var isListening = false
+    /// When true, scores come only from the on-screen Hit and Miss buttons and
+    /// spoken scoring is ignored. Names are still taken by voice.
+    var isManualMode: Bool = UserDefaults.standard.bool(forKey: "manualMode") {
+        didSet {
+            UserDefaults.standard.set(isManualMode, forKey: "manualMode")
+            if isManualMode {
+                cancelPendingScores()
+                processedWordCount = latestWordCount
+            }
+        }
+    }
     /// Whether the current (or last) listening session is for scoring or new names.
     private(set) var listeningMode: ListeningMode = .scoring
     /// The most recent transcription heard from the microphone, for on-screen feedback.
@@ -1046,6 +1057,10 @@ class ShootViewModel {
     func handleSpeech(_ text: String) {
         let words = text.split(separator: " ").map(String.init)
         latestWordCount = words.count
+        if isManualMode {
+            processedWordCount = words.count
+            return
+        }
 
         // A "clear …" command is still being spoken: keep collecting it until the
         // speaker pauses, and do not score anything in the meantime.

@@ -77,11 +77,17 @@ struct ContentView: View {
                 }
 
                 statusBar
+
+                if vm.isManualMode, !vm.isAddingShooter, !vm.isComplete {
+                    manualButtons
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
             .padding(.horizontal, isCompact ? 12 : 20)
             .padding(.vertical, isCompact ? 8 : 20)
             .animation(.snappy, value: vm.isAddingShooter)
             .animation(.snappy, value: vm.isComplete)
+            .animation(.snappy, value: vm.isManualMode)
             .onAppear {
                 isScoreTableFocused = true
                 // Listening is always on: start as soon as the app is showing.
@@ -150,6 +156,7 @@ struct ContentView: View {
     private var controlPanel: some ToolbarContent {
         ToolbarItemGroup {
             addShootersButton
+            modeButton
             listenButton
             serverSettingsButton
         }
@@ -195,6 +202,7 @@ struct ContentView: View {
 
         ToolbarItemGroup {
             addShootersButton
+            modeButton
             listenButton
 
             Menu {
@@ -211,6 +219,25 @@ struct ContentView: View {
                 Label("More", systemImage: "ellipsis.circle")
             }
         }
+    }
+
+    private var modeButton: some View {
+        Button {
+            vm.isManualMode.toggle()
+        } label: {
+            Label(vm.isManualMode ? "Manual" : "Voice",
+                  systemImage: vm.isManualMode ? "hand.tap.fill" : "waveform")
+        }
+        .help(vm.isManualMode ? "Manual scoring: hold the green or red button. Tap for voice" : "Voice scoring. Tap for manual buttons")
+    }
+
+    /// Large hold-to-score buttons shown at the bottom in manual mode.
+    private var manualButtons: some View {
+        HStack(spacing: 12) {
+            HoldScoreButton(title: "HIT", color: .green, systemImage: "checkmark") { vm.recordHit() }
+            HoldScoreButton(title: "MISS", color: .red, systemImage: "xmark") { vm.recordMiss() }
+        }
+        .frame(height: isCompact ? 90 : 120)
     }
 
     private var addShootersButton: some View {
