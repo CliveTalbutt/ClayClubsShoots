@@ -27,11 +27,15 @@
     <select name="status" aria-label="Membership status" data-edit-only hidden disabled><option value="current">Current</option><option value="expired">Expired</option></select>
     <button class="btn small" data-form-submit>Add to membership</button>
     <button type="button" class="btn small secondary" data-form-cancel hidden>Cancel</button>
+    <button class="btn small danger" form="roster-delete" data-form-remove hidden>Remove member</button>
     <span class="muted" data-edit-guid></span>
+  </form>
+  <form method="post" id="roster-delete" class="inline" data-confirm="Remove this member from the membership? Past results are kept. This cannot be undone.">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
   </form>
   <% if (roster.length) { %>
   <table class="results-table social-table">
-    <thead><tr><th>Name</th><th>Shoots</th><th>Email</th><th>Type</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Shoots</th><th>Email</th><th>Type</th></tr></thead>
     <tbody>
       <% roster.forEach(r => { const cls = r.status === 'expired' ? 'tag-expired' : (r.kind === 'member' ? 'tag-member' : 'tag-guest'); %>
         <tr class="roster-row" data-edit="<%= JSON.stringify({ id: r.id, guid: r.guid, name: r.name, email: r.email, kind: r.is_admin ? 'admin' : r.kind, status: r.status }) %>">
@@ -49,18 +53,6 @@
               <form method="post" action="/shooters/roster/<%= r.id %>/verify" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small secondary"><%= r.verify_sent_at ? 'Resend' : 'Verify' %></button></form>
             <% } %></td>
           <td><span class="<%= cls %>"><%= r.status === 'expired' ? 'Expired ' + r.kind : (r.kind === 'member' ? 'Member' : 'Guest') %></span><% if (r.is_admin) { %> <span class="badge ok">Admin</span><% } %></td>
-          <td class="social-actions roster-actions">
-            <% if (r.status === 'current') { %>
-              <form method="post" action="/shooters/roster/<%= r.id %>/kind" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="kind" value="<%= r.kind === 'member' ? 'guest' : 'member' %>"><button class="btn small secondary">Make <%= r.kind === 'member' ? 'guest' : 'member' %></button></form>
-              <% if (r.kind === 'member') { %>
-              <form method="post" action="/shooters/roster/<%= r.id %>/admin" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="admin" value="<%= r.is_admin ? '0' : '1' %>"><button class="btn small secondary"><%= r.is_admin ? 'Remove admin' : 'Make admin' %></button></form>
-              <form method="post" action="/shooters/roster/<%= r.id %>/status" class="inline" data-confirm="Mark this membership as expired? They will no longer be offered in the app."><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="status" value="expired"><button class="btn small secondary">Expire membership</button></form>
-              <% } %>
-            <% } else { %>
-              <form method="post" action="/shooters/roster/<%= r.id %>/status" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="status" value="current"><button class="btn small secondary">Reinstate</button></form>
-            <% } %>
-            <form method="post" action="/shooters/roster/<%= r.id %>/delete" class="inline" data-confirm="Remove from the membership? Past results are kept."><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small danger" title="Remove from membership" aria-label="Remove <%= r.name %> from membership">&times;</button></form>
-          </td>
         </tr>
       <% }) %>
     </tbody>

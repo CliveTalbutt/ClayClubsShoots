@@ -5,6 +5,7 @@
   var el = form.elements, title = form.querySelector('[data-form-title]');
   var submit = form.querySelector('[data-form-submit]'), cancel = form.querySelector('[data-form-cancel]');
   var status = form.querySelector('[data-edit-only]'), guid = form.querySelector('[data-edit-guid]');
+  var remove = form.querySelector('[data-form-remove]'), delForm = document.getElementById('roster-delete');
   var addAction = form.getAttribute('action');
   var selected = null;
 
@@ -27,11 +28,13 @@
     selected = row;
     var editing = !!row;
     status.hidden = status.disabled = !editing;
-    cancel.hidden = !editing;
+    cancel.hidden = remove.hidden = !editing;
     if (editing) {
       var d = JSON.parse(row.dataset.edit);
       row.classList.add('selected');
       form.action = '/shooters/roster/' + d.id + '/edit';
+      delForm.action = '/shooters/roster/' + d.id + '/delete';
+      delForm.dataset.confirm = 'Remove ' + d.name + ' from the membership? Past results are kept. This cannot be undone.';
       title.textContent = 'Edit member';
       submit.textContent = 'Save';
       el.name.value = d.name; el.email.value = d.email; el.kind.value = d.kind; status.value = d.status;
