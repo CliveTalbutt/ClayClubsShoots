@@ -265,7 +265,7 @@ struct ContentView: View {
         Button {
             isShowingRoster = true
         } label: {
-            Label("Roster", systemImage: "person.3.fill")
+            Label("Membership", systemImage: "person.3.fill")
         }
         .help("Choose who is shooting from the club's registered shooters")
         .disabled(vm.isComplete)

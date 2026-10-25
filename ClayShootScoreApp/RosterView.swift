@@ -136,7 +136,7 @@ struct RosterView: View {
 
     private func load() async {
         guard let client = settings.client else {
-            message = "Add the server in Server Settings to load the roster."
+            message = "Add the server in Server Settings to load the membership."
             return
         }
         isLoading = true
