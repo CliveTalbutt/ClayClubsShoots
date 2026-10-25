@@ -39,6 +39,7 @@ nonisolated struct RosterShooter: Codable, Identifiable, Hashable, Sendable {
     let email: String
     /// "member" or "guest".
     let kind: String
+    var isAdmin: Bool? = false
     var isGuest: Bool { kind != "member" }
 }
 
@@ -104,14 +105,15 @@ nonisolated struct ClayShootsClient: Sendable {
         return try JSONDecoder().decode(Reply.self, from: data).shooters
     }
 
-    /// Adds a new shooter to the club's roster (as a guest) and returns the saved entry.
-    func addRosterShooter(name: String, email: String) async throws -> RosterShooter {
+    /// Adds a new shooter to the club's roster as a member or guest and returns the saved entry.
+    func addRosterShooter(name: String, email: String, isMember: Bool, isAdmin: Bool) async throws -> RosterShooter {
         var request = URLRequest(url: baseURL.appending(path: "api/v1/shooters"))
         request.httpMethod = "POST"
         request.timeoutInterval = 15
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(["name": name, "email": email])
+        struct NewShooter: Encodable { let name: String; let email: String; let kind: String; let isAdmin: Bool }
+        request.httpBody = try JSONEncoder().encode(NewShooter(name: name, email: email, kind: isMember ? "member" : "guest", isAdmin: isMember && isAdmin))
         let (data, response) = try await perform(request)
         guard response.statusCode == 200 || response.statusCode == 201 else {
             if response.statusCode == 409 { throw ClayShootsError.validation(["that shooter's membership has expired"]) }

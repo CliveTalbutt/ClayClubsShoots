@@ -15,6 +15,8 @@ struct RosterView: View {
     @State private var newName = ""
     @State private var newEmail = ""
     @State private var isAdding = false
+    @State private var newIsMember = false
+    @State private var newIsAdmin = false
 
     private static let cacheKey = "rosterCache"
 
@@ -58,6 +60,13 @@ struct RosterView: View {
                                     .foregroundStyle(entry.isGuest ? .red : .green)
                                     .fontWeight(.semibold)
                                 Spacer()
+                                if entry.isAdmin == true {
+                                    Text("Admin")
+                                        .font(.caption.bold())
+                                        .padding(.horizontal, 8).padding(.vertical, 2)
+                                        .background(Color.blue, in: .capsule)
+                                        .foregroundStyle(.white)
+                                }
                                 Text(entry.isGuest ? "Guest" : "Member")
                                     .font(.caption.bold())
                                     .padding(.horizontal, 8).padding(.vertical, 2)
@@ -77,6 +86,14 @@ struct RosterView: View {
                         .textInputAutocapitalization(.never)
                         .keyboardType(.emailAddress)
                         .autocorrectionDisabled()
+                    Picker("Type", selection: $newIsMember) {
+                        Text("Guest").tag(false)
+                        Text("Member").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    if newIsMember {
+                        Toggle("Admin", isOn: $newIsAdmin)
+                    }
                     if !newEmail.isEmpty, !Self.isValidEmail(newEmail) {
                         Text("Enter a valid email address.").font(.footnote).foregroundStyle(.red)
                     }
@@ -140,7 +157,8 @@ struct RosterView: View {
         do {
             let saved = try await client.addRosterShooter(
                 name: ClayShootsNameCleaner.clean(newName),
-                email: newEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+                email: newEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                isMember: newIsMember, isAdmin: newIsAdmin)
             if !roster.contains(where: { $0.id == saved.id }) {
                 roster.append(saved)
                 roster.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -148,6 +166,7 @@ struct RosterView: View {
             ticked.insert(saved.id)
             newName = ""
             newEmail = ""
+            newIsAdmin = false
             message = nil
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
