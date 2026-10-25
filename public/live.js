@@ -33,6 +33,6 @@ if (watched.some((p) => location.pathname.startsWith(p))) {
     } catch { /* offline or restarting: try again next time */ }
   };
   check();
-  setInterval(check, 5000);
+  setInterval(check, 1500);
   document.addEventListener('visibilitychange', check);
 }
