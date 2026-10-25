@@ -16,7 +16,7 @@
 </section>
 
 <section class="card" id="roster">
-  <h2>Roster</h2>
+  <h2>Membership</h2>
   <p class="muted">Registered shooters for this club. The iPhone app lists <span class="tag-member">members</span> and <span class="tag-guest">guests</span> that are current; <span class="tag-expired">expired</span> members are kept for their past shoots but are not offered to the app. Shooters added from the app arrive as guests.</p>
   <form method="post" id="roster-edit" hidden class="social-actions roster-edit">
     <input type="hidden" name="_csrf" value="<%= csrf %>">
@@ -34,7 +34,7 @@
     <input name="name" maxlength="60" placeholder="Name" required aria-label="Name">
     <input type="email" name="email" maxlength="200" placeholder="name@example.com" required aria-label="Email">
     <select name="kind" aria-label="Member or guest"><option value="member">Member</option><option value="admin">Admin (also a member)</option><option value="guest">Guest</option></select>
-    <button class="btn small">Add to roster</button>
+    <button class="btn small">Add to membership</button>
   </form>
   <% if (roster.length) { %>
   <table class="results-table social-table">
@@ -66,13 +66,13 @@
             <% } else { %>
               <form method="post" action="/shooters/roster/<%= r.id %>/status" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="status" value="current"><button class="btn small secondary">Reinstate</button></form>
             <% } %>
-            <form method="post" action="/shooters/roster/<%= r.id %>/delete" class="inline" data-confirm="Remove from the roster? Past results are kept."><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small danger" title="Remove from roster" aria-label="Remove <%= r.name %> from roster">&times;</button></form>
+            <form method="post" action="/shooters/roster/<%= r.id %>/delete" class="inline" data-confirm="Remove from the membership? Past results are kept."><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small danger" title="Remove from membership" aria-label="Remove <%= r.name %> from membership">&times;</button></form>
           </td>
         </tr>
       <% }) %>
     </tbody>
   </table>
-  <% } else { %><p class="muted">No shooters on the roster yet.</p><% } %>
+  <% } else { %><p class="muted">No shooters in the membership yet.</p><% } %>
 </section>
 
 <script src="/roster-add.js" defer></script>

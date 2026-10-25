@@ -96,7 +96,7 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
     const r = add(req.session.userId, req.body, kind, admin);
     if (r.status === 201) sendVerification(req.session.userId, r.body.shooter.id).catch(() => {});
     if (r.status === 201) return back(res, `Added ${r.body.shooter.name} as ${admin ? 'an admin member' : 'a ' + kind}.`);
-    if (r.status === 200) return back(res, null, 'That shooter is already on the roster.');
+    if (r.status === 200) return back(res, null, 'That shooter is already in the membership.');
     back(res, null, (r.body.details || ['Could not add shooter.']).join('; '));
   });
 
@@ -113,7 +113,7 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
     const status = req.body.status === 'expired' ? 'expired' : 'current';
     const nk = key(name);
     if (db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND id != ? AND (name_key = ? AND (email = ? OR ? != ?))').get(uid, r.id, nk, email, nk, r.name_key)) {
-      return back(res, null, 'Another roster entry already uses that name or name and email.');
+      return back(res, null, 'Another membership entry already uses that name or name and email.');
     }
     const emailChanged = email !== r.email;
     try {
@@ -175,7 +175,7 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
     const r = mine(req);
     if (!r) return back(res, null, 'Unknown shooter.');
     db.prepare('DELETE FROM roster WHERE id = ?').run(r.id);
-    back(res, `Removed ${r.name} from the roster. Past results are kept.`);
+    back(res, `Removed ${r.name} from the membership. Past results are kept.`);
   });
 
   return { router, add, listCurrent, listAll, sendVerification, verifyToken };
