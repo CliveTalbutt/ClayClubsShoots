@@ -159,6 +159,8 @@ struct ScoreTableView: View {
                         .padding(.vertical, 24)
                 } else {
                     ForEach(vm.shooters.indices, id: \.self) { shooterIndex in
+                      // The list can shrink before this closure is re-evaluated.
+                      if vm.shooters.indices.contains(shooterIndex) {
                         let shooterID = vm.shooters[shooterIndex].id
                         shooterRow(shooterIndex)
                             .onGeometryChange(for: CGRect.self) { proxy in
@@ -169,6 +171,7 @@ struct ScoreTableView: View {
                                     scrollToCurrentShooter()
                                 }
                             }
+                      }
                     }
                 }
             }
