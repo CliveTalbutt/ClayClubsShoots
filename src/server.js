@@ -144,6 +144,13 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
       if (!Array.isArray(s.scores) || s.scores.length !== b.stands ||
           !s.scores.every((x) => Number.isInteger(x) && x >= 0 && x <= tps))
         errors.push(`shooters[${i}].scores must be ${b.stands} integers between 0 and ${tps}`);
+      // Optional per-clay detail: one string per stand, '1' hit, '0' miss, '-' not shot.
+      if (s.patterns != null) {
+        const ok = Array.isArray(s.patterns) && s.patterns.length === b.stands && s.patterns.every((p, k) =>
+          typeof p === 'string' && p.length === tps && /^[01-]+$/.test(p) && Array.isArray(s.scores) &&
+          (p.match(/1/g) || []).length === s.scores[k]);
+        if (!ok) errors.push(`shooters[${i}].patterns must be ${b.stands} strings of ${tps} characters (1, 0 or -) matching the scores`);
+      }
     });
   }
   if (errors.length) return res.status(400).json({ error: 'validation_failed', details: errors });
@@ -156,8 +163,8 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
         db.prepare('UPDATE shoots SET name = ?, venue = ?, shoot_date = ?, shoot_time = ?, stands = ?, targets_per_stand = ? WHERE id = ?')
           .run(b.name.trim(), b.venue?.trim() ?? null, b.date, b.time ?? null, b.stands, tps, existing.id);
         db.prepare('DELETE FROM results WHERE shoot_id = ?').run(existing.id);
-        const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score) VALUES (?,?,?,?)');
-        for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(existing.id, s.name.trim(), i + 1, sc));
+        const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score, pattern) VALUES (?,?,?,?,?)');
+        for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(existing.id, s.name.trim(), i + 1, sc, s.patterns?.[i] ?? null));
       })();
       mailer.saveEmails(user.id, b.shooters);
       if (b.complete === true) notifyOnce(user.id, existing.id, flags);
@@ -167,8 +174,8 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
       const r = db.prepare(
         'INSERT INTO shoots (user_id, external_id, name, venue, shoot_date, shoot_time, stands, targets_per_stand) VALUES (?,?,?,?,?,?,?,?)'
       ).run(user.id, b.externalId ?? null, b.name.trim(), b.venue?.trim() ?? null, b.date, b.time ?? null, b.stands, tps);
-      const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score) VALUES (?,?,?,?)');
-      for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(r.lastInsertRowid, s.name.trim(), i + 1, sc));
+      const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score, pattern) VALUES (?,?,?,?,?)');
+      for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(r.lastInsertRowid, s.name.trim(), i + 1, sc, s.patterns?.[i] ?? null));
       return r.lastInsertRowid;
     })();
     mailer.saveEmails(user.id, b.shooters);
@@ -406,18 +413,20 @@ app.get('/results', needAuth, (req, res) => {
 
     const map = new Map();
     const rows = db.prepare(
-      'SELECT shooter, stand, score FROM results WHERE shoot_id = ? ORDER BY shooter, stand'
+      'SELECT shooter, stand, score, pattern FROM results WHERE shoot_id = ? ORDER BY shooter, stand'
     ).all(shoot.id);
     for (const row of rows) {
       if (!map.has(row.shooter)) {
         map.set(row.shooter, {
           name: row.shooter,
           scores: Array(shoot.stands).fill(null),
+          patterns: Array(shoot.stands).fill(null),
           total: 0,
         });
       }
       const shooter = map.get(row.shooter);
       shooter.scores[row.stand - 1] = row.score;
+      shooter.patterns[row.stand - 1] = row.pattern;
       shooter.total += row.score;
     }
     shooters = [...map.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));

@@ -63,7 +63,7 @@
             <tr data-shooter="<%= shooter.name.toLowerCase() %>">
               <th scope="row"<%- shooterAttrs(shooter.name) %>><%= shooter.name %></th>
               <% shooter.scores.forEach((score, si) => { const tps = shoot.targets_per_stand; %>
-                <td class="num" data-sort-value="<%= score ?? '' %>"<% if (score != null) { %> title="Stand <%= si + 1 %>: <%= score %> hit<%= score === 1 ? '' : 's' %>, <%= tps - score %> miss<%= tps - score === 1 ? '' : 'es' %> (of <%= tps %>)&#10;<%= '●'.repeat(score) + '○'.repeat(Math.max(0, tps - score)) %>"<% } %>>
+                <td class="num" data-sort-value="<%= score ?? '' %>"<% if (score != null) { %> data-clays="<%= JSON.stringify({ shooter: shooter.name, stand: si + 1, hits: score, total: tps, pattern: shooter.patterns[si] }) %>" tabindex="0"<% } %>>
                   <% if (score == null) { %>
                     <span aria-label="No score recorded">–</span>
                   <% } else { %>
@@ -90,4 +90,5 @@
   </section>
 <% } %>
 <script src="/results.js" defer></script>
+<script src="/clays.js" defer></script>
 <%- include('partials/foot') %>
