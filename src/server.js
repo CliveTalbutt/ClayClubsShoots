@@ -499,6 +499,18 @@ app.post('/shoots/:token/delete', needAuth, (req, res) => {
   res.redirect(['/results', '/dashboard'].includes(req.body.from) ? req.body.from : '/dashboard');
 });
 
+app.post('/shoots/delete-selected', needAuth, (req, res) => {
+  const raw = [].concat(req.body.ids || []).slice(0, 500);
+  const del = db.prepare('DELETE FROM shoots WHERE id = ? AND user_id = ?');
+  db.transaction(() => {
+    for (const token of raw) {
+      const id = decodeId(req.session.userId, String(token));
+      if (id != null) del.run(id, req.session.userId);
+    }
+  })();
+  res.redirect('/dashboard');
+});
+
 app.post('/settings/api-key', needAuth, (req, res) => {
   const key = 'cs_' + crypto.randomBytes(32).toString('hex');
   db.prepare('UPDATE users SET api_key_hash = ? WHERE id = ?').run(hashKey(key), req.session.userId);

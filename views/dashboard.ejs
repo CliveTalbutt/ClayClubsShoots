@@ -58,16 +58,19 @@
 </section>
 
 <section class="card">
-  <div class="row"><h2>Shoots</h2></div>
+  <div class="row"><h2>Shoots</h2>
+    <form id="bulk-delete" method="post" action="/shoots/delete-selected" data-confirm="Delete the selected shoots and all their results? This cannot be undone." hidden><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small danger">Delete selected (<span id="bulk-count">0</span>)</button></form>
+  </div>
   <% if (!shoots.length) { %><p class="muted">No shoots yet.</p><% } else { %>
   <table>
-    <thead><tr><th>Date</th><th>Shoot</th><th>Venue</th><th>Stands</th><th>Shooters</th><th></th></tr></thead>
+    <thead><tr><th><input type="checkbox" id="select-all" aria-label="Select all shoots"></th><th>Date</th><th>Shoot</th><th>Venue</th><th>Stands</th><th>Shooters</th><th></th></tr></thead>
     <tbody>
     <% shoots.forEach(s => { %>
-      <tr><td><%= when(s) %></td><td><a href="/shoots/<%= eid(s.id) %>"><%= s.name %></a></td><td><%= s.venue || '' %></td><td><%= s.stands %></td><td><%= s.shooters %></td><td><form method="post" action="/shoots/<%= eid(s.id) %>/delete" class="inline" data-confirm="Delete this shoot and all its results? This cannot be undone."><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="/dashboard"><button class="btn small danger">Delete</button></form></td></tr>
+      <tr><td><input type="checkbox" class="shoot-select" form="bulk-delete" name="ids" value="<%= eid(s.id) %>" aria-label="Select shoot"></td><td><%= when(s) %></td><td><a href="/shoots/<%= eid(s.id) %>"><%= s.name %></a></td><td><%= s.venue || '' %></td><td><%= s.stands %></td><td><%= s.shooters %></td><td><form method="post" action="/shoots/<%= eid(s.id) %>/delete" class="inline" data-confirm="Delete this shoot and all its results? This cannot be undone."><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="/dashboard"><button class="btn small danger">Delete</button></form></td></tr>
     <% }) %>
     </tbody>
   </table>
   <% } %>
 </section>
+<script src="/bulk-select.js" defer></script>
 <%- include('partials/foot') %>
