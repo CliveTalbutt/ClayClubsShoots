@@ -194,6 +194,61 @@ class ShootViewModel {
         numberOfStands = Self.standOptions.contains(savedStands) ? savedStands : Self.defaultNumberOfStands
         observeAudioEngineChanges()
         observeAppTermination()
+        restoreSnapshot()
+    }
+
+    // MARK: - Resuming after the app was closed
+
+    /// How long after the last change a closed shoot is still picked up again on relaunch.
+    static let resumeWindow: TimeInterval = 30 * 60
+    private static let snapshotKey = "shootSnapshot"
+
+    private struct Snapshot: Codable {
+        struct Entry: Codable { var name: String; var scores: [[Int]] }
+        var savedAt: Date
+        var sessionId: String
+        var shootStart: Date
+        var shooters: [Entry]
+        var currentShooterIndex: Int?
+        var currentStand: Int
+        var currentTarget: Int
+        var kinds: [String: String]
+    }
+
+    /// Changes whenever anything worth resuming changes, so the view can save on every change.
+    var snapshotSignature: String {
+        let rows = shooters.map { $0.name + ":" + $0.scores.map { $0.map(String.init).joined(separator: ",") }.joined(separator: "|") }
+        return "\(rows.joined(separator: ";"))#\(currentShooterIndex ?? -1)#\(currentStand)#\(currentTarget)#\(shootSessionId)#\(kinds.count)"
+    }
+
+    /// Saves the shoot so a relaunch within the resume window carries on where it stopped.
+    func saveSnapshot() {
+        let snapshot = Snapshot(
+            savedAt: .now, sessionId: shootSessionId, shootStart: shootStart,
+            shooters: shooters.map { .init(name: $0.name, scores: $0.scores) },
+            currentShooterIndex: currentShooterIndex, currentStand: currentStand,
+            currentTarget: currentTarget, kinds: kinds)
+        if let data = try? JSONEncoder().encode(snapshot) { UserDefaults.standard.set(data, forKey: Self.snapshotKey) }
+    }
+
+    private func restoreSnapshot() {
+        guard let data = UserDefaults.standard.data(forKey: Self.snapshotKey),
+              let snap = try? JSONDecoder().decode(Snapshot.self, from: data),
+              !snap.shooters.isEmpty,
+              Date.now.timeIntervalSince(snap.savedAt) <= Self.resumeWindow else { return }
+        shootSessionId = snap.sessionId
+        shootStart = snap.shootStart
+        kinds = snap.kinds
+        shooters = snap.shooters.map { entry in
+            var shooter = Shooter(name: entry.name, numberOfStands: numberOfStands, targetsPerStand: Self.targetsPerStand)
+            for (stand, row) in entry.scores.enumerated() where shooter.scores.indices.contains(stand) && row.count == shooter.scores[stand].count {
+                shooter.scores[stand] = row
+            }
+            return shooter
+        }
+        currentShooterIndex = snap.currentShooterIndex.flatMap { shooters.indices.contains($0) ? $0 : nil }
+        currentStand = min(max(snap.currentStand, 0), numberOfStands)
+        currentTarget = min(max(snap.currentTarget, 0), Self.targetsPerStand - 1)
     }
 
     /// The full heading, e.g. "West Peckham Shoot - 23 October 2026".

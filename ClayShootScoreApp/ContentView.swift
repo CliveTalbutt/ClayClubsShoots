@@ -95,6 +95,8 @@ struct ContentView: View {
             .animation(.snappy, value: vm.shooters.isEmpty)
             .onAppear {
                 isScoreTableFocused = true
+                // A new shoot starts at "Who is shooting?"; a resumed one shows its shooters and scores.
+                if vm.shooters.isEmpty { isShowingRoster = true }
                 // Listening is always on: start as soon as the app is showing.
                 vm.resumeListening()
             }
@@ -110,6 +112,7 @@ struct ContentView: View {
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
                 case .background:
+                    vm.saveSnapshot()
                     vm.stopListeningForBackground()
                 case .active:
                     vm.resumeListening()
@@ -117,6 +120,7 @@ struct ContentView: View {
                     break
                 }
             }
+            .onChange(of: vm.snapshotSignature) { _, _ in vm.saveSnapshot() }
             #if os(macOS)
             .frame(minWidth: 900, minHeight: 500)
             #endif
