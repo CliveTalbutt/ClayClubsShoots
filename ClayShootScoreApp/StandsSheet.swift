@@ -29,7 +29,7 @@ struct StandsSheet: View {
                         if let n = Int(digits), range.contains(n), n != vm.numberOfStands { vm.numberOfStands = n }
                     }
             }
-            Text("\\(range.lowerBound) to \\(range.upperBound). Remembered for \\(vm.shootName).")
+            Text("\(range.lowerBound) to \(range.upperBound). Remembered for \(vm.shootName).")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Button("Done") { commit(); dismiss() }
