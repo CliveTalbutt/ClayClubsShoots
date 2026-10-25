@@ -145,6 +145,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS shooter_emails (
 if (!db.prepare("SELECT 1 FROM pragma_table_info('roster') WHERE name = 'is_admin'").get()) {
   db.exec('ALTER TABLE roster ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
 }
+if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'is_super'").get()) {
+  db.exec('ALTER TABLE users ADD COLUMN is_super INTEGER NOT NULL DEFAULT 0');
+}
+// The super admin is fixed by account, not by email, so changing an email never hands over the role.
+if (!db.prepare('SELECT 1 FROM users WHERE is_super = 1').get()) {
+  db.prepare('UPDATE users SET is_super = 1 WHERE lower(email) = ?').run((process.env.SUPER_ADMIN_EMAIL || 'clive.talbutt@gmail.com').toLowerCase());
+}
 // One-off: shooters who already had an email address become current members.
 if (!hadRoster) {
   db.exec(`INSERT OR IGNORE INTO roster (user_id, name, name_key, email, kind, status)

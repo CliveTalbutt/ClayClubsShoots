@@ -74,6 +74,8 @@ const payments = require('./payments')({ db, baseUrl: BASE_URL, needAuth: (q, s,
 app.use('/webhook', payments.webhooks);
 const mailer = require('./mailer')({ db, classify: (s) => classify(s), needAuth: (q, r, n) => needAuth(q, r, n), wrap });
 const roster = require('./roster')({ db, needAuth: (q, r, n) => needAuth(q, r, n), mailer });
+const backup = require('./backup')({ db, dir: path.join(__dirname, '..', 'data', 'backups') });
+if (process.env.DB_IN_MEMORY !== '1') backup.schedule();
 const social = require('./social')({ db, encrypt, decrypt, needAuth: (q, r, n) => needAuth(q, r, n), wrap });
 
 // ---- JSON API for the iPhone app (bearer key, no cookies/CSRF) ----
@@ -289,12 +291,26 @@ function accountData(u) {
   else state = { label: 'Inactive', cls: 'warn', note: 'No plan yet. Choose one on the Dashboard to record shoots.' };
   const lastPayment = db.prepare("SELECT provider, plan, created_at FROM payments WHERE user_id = ? AND status = 'paid' ORDER BY id DESC LIMIT 1").get(u.id);
   const counts = db.prepare('SELECT COUNT(*) AS shoots FROM shoots WHERE user_id = ?').get(u.id);
-  return { state, paymentsOn, lastPayment, counts, hasKey: !!u.api_key_hash, hasPortal: payments.hasStripePortal && !!u.stripe_customer_id };
+  return { isSuper: u.is_super === 1, backups: u.is_super === 1 ? backup.list().slice(0, 15) : [], backupMsg: null, state, paymentsOn, lastPayment, counts, hasKey: !!u.api_key_hash, hasPortal: payments.hasStripePortal && !!u.stripe_customer_id };
 }
 app.get('/account', needAuth, (req, res) => {
   const u = res.locals.user;
-  res.render('account', { msg: req.query.saved ? 'Changes saved.' : null, error: null, form: null, acct: u, ...accountData(u) });
+  res.render('account', { msg: req.query.saved ? 'Changes saved.' : null, error: null, form: null, acct: u, ...accountData(u), backupMsg: req.query.backup || null });
 });
+
+const needSuper = (req, res, next) => (res.locals.user && res.locals.user.is_super === 1 ? next() : res.status(404).send('Not found'));
+const backupDone = (res, msg) => res.redirect('/account?backup=' + encodeURIComponent(msg) + '#backups');
+app.post('/account/backups/run', needAuth, needSuper, (req, res) => {
+  try { backupDone(res, 'Backup written: ' + backup.write()); } catch (e) { backupDone(res, 'Backup failed: ' + e.message); }
+});
+app.post('/account/backups/restore', needAuth, needSuper, authLimiter, wrap(async (req, res) => {
+  const u = res.locals.user;
+  if (!(await bcrypt.compare(String(req.body.password || ''), u.password_hash))) return backupDone(res, 'Restore cancelled: the password was wrong.');
+  try {
+    const safety = backup.restore(String(req.body.file || ''));
+    backupDone(res, `Restored ${req.body.file}. A copy of the data before the restore was saved as ${safety}.`);
+  } catch (e) { backupDone(res, 'Restore failed: ' + e.message); }
+}));
 
 app.post('/account', needAuth, authLimiter, wrap(async (req, res) => {
   const u = res.locals.user;

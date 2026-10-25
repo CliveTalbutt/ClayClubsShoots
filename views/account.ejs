@@ -33,4 +33,33 @@
   <p>iPhone app API key: <span class="badge <%= hasKey ? 'ok' : 'warn' %>"><%= hasKey ? 'Created' : 'Not created' %></span> <span class="muted">(keys are never shown again; create a new one on the Dashboard)</span></p>
   <form method="post" action="/logout" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small secondary">Sign out</button></form>
 </section>
+<% if (isSuper) { %>
+<section class="card" id="backups">
+  <h2>Database backups <span class="badge ok">Admin only</span></h2>
+  <p class="muted">Everything is saved to a JSON file in <code>data/backups</code> every day at midnight while the server is running. The latest 30 are kept. Backups contain all clubs' data, including password hashes, so keep that folder private.</p>
+  <% if (backupMsg) { %><p><span class="badge warn"><%= backupMsg %></span></p><% } %>
+  <form method="post" action="/account/backups/run" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small secondary">Back up now</button></form>
+  <% if (!backups.length) { %><p class="muted">No backups yet.</p><% } else { %>
+  <table class="results-table social-table">
+    <thead><tr><th>Backup</th><th>Taken</th><th>Size</th><th>Restore</th></tr></thead>
+    <tbody>
+      <% backups.forEach(b => { %>
+      <tr>
+        <td><code><%= b.file %></code><br><span class="muted"><%= b.kind %></span></td>
+        <td><%= new Date(b.when).toLocaleString('en-GB') %></td>
+        <td><%= (b.size / 1024).toFixed(1) %> KB</td>
+        <td>
+          <form method="post" action="/account/backups/restore" class="social-actions" data-confirm="Replace ALL current data with this backup? Anything added since will be lost. A safety copy of the current data is saved first.">
+            <input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="file" value="<%= b.file %>">
+            <input type="password" name="password" placeholder="Your password" autocomplete="current-password" required aria-label="Password to confirm restore">
+            <button class="btn small danger">Restore</button>
+          </form>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</section>
+<% } %>
 <%- include('partials/foot') %>
