@@ -27,6 +27,7 @@ struct ScoreTableView: View {
     /// The part of the table content currently on screen, in content coordinates.
     @State private var visibleRect = CGRect.zero
     /// Where each shooter's row sits within the table content.
+    @State private var standFrames: [Int: CGRect] = [:]
     @State private var rowFrames: [Shooter.ID: CGRect] = [:]
     /// A shooter whose row should be scrolled to as soon as it has been laid out.
     @State private var pendingScrollID: Shooter.ID?
@@ -130,6 +131,9 @@ struct ScoreTableView: View {
         .onChange(of: vm.currentShooterIndex) { _, _ in
             scrollToCurrentShooter()
         }
+        .onChange(of: vm.currentStand) { _, _ in
+            scrollToCurrentShooter()
+        }
     }
 
     /// Scrolls vertically by the smallest amount that brings the current shooter's
@@ -146,17 +150,28 @@ struct ScoreTableView: View {
         pendingScrollID = nil
 
         let margin: CGFloat = 8
-        let targetY: CGFloat
+        var targetY = visibleRect.minY
         if row.minY < visibleRect.minY {
             targetY = row.minY - margin
         } else if row.maxY > visibleRect.maxY {
             targetY = row.maxY + margin - visibleRect.height
-        } else {
-            return   // Already fully visible.
         }
 
+        // Also bring the current stand's columns into view horizontally.
+        var targetX = visibleRect.minX
+        if !vm.isComplete, let stand = standFrames[vm.currentStand] {
+            if stand.width >= visibleRect.width || stand.minX < visibleRect.minX {
+                targetX = stand.minX - margin
+            } else if stand.maxX > visibleRect.maxX {
+                targetX = stand.maxX + margin - visibleRect.width
+            }
+        }
+        targetX = max(0, targetX)
+        targetY = max(0, targetY)
+        guard abs(targetX - visibleRect.minX) > 0.5 || abs(targetY - visibleRect.minY) > 0.5 else { return }
+
         withAnimation(.snappy) {
-            scrollPosition.scrollTo(x: visibleRect.minX, y: max(0, targetY))
+            scrollPosition.scrollTo(x: targetX, y: targetY)
         }
     }
 
@@ -179,6 +194,12 @@ struct ScoreTableView: View {
                     // with the rows without labelling every stand total.
                     Color.clear
                         .frame(width: standTotalWidth, height: 1)
+                }
+                .onGeometryChange(for: CGRect.self) { proxy in
+                    proxy.frame(in: .named(Self.tableSpace))
+                } action: { frame in
+                    standFrames[stand] = frame
+                    if stand == vm.currentStand { scrollToCurrentShooter() }
                 }
             }
 
