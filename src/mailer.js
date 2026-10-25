@@ -236,7 +236,13 @@ ${notes.map((n) => `<p>${esc(n)}</p>`).join('')}
     const shooters = names.map((n) => ({ name: n.shooter, shoots: n.shoots, rec: emails.get(key(n.shooter)) || null }));
     const auto = db.prepare('SELECT email_results FROM users WHERE id = ?').get(uid).email_results === 1;
     const counts = new Map(names.map((n) => [key(n.shooter), n.shoots]));
-    const roster = (res.locals.roster || []).map((r) => ({ ...r, shoots: counts.get(r.name_key) || 0 }));
+    const attended = new Map();
+    for (const s of db.prepare('SELECT DISTINCT r.shooter, s.id, s.name, s.venue, s.shoot_date FROM results r JOIN shoots s ON s.id = r.shoot_id WHERE s.user_id = ? ORDER BY s.shoot_date DESC, s.id DESC').all(uid)) {
+      const k = key(s.shooter);
+      if (!attended.has(k)) attended.set(k, []);
+      attended.get(k).push(s);
+    }
+    const roster = (res.locals.roster || []).map((r) => ({ ...r, shoots: counts.get(r.name_key) || 0, attended: attended.get(r.name_key) || [] }));
     res.render('shooters', { roster, shooters, auto, configured: configured(), msg: req.query.msg || null, err: req.query.err || null });
   });
 

@@ -32,7 +32,13 @@
       <% roster.forEach(r => { const cls = r.status === 'expired' ? 'tag-expired' : (r.kind === 'member' ? 'tag-member' : 'tag-guest'); %>
         <tr>
           <th scope="row"><span class="<%= cls %>"<%- shooterAttrs(r.name) %>><%= r.name %></span></th>
-          <td><%= r.shoots %></td>
+          <td><% if (r.shoots) { %><button type="button" class="btn small secondary" data-attend="attend-<%= r.id %>"><%= r.shoots %></button>
+            <dialog id="attend-<%= r.id %>" class="attend-dialog"><h3><%= r.name %> &ndash; <%= r.shoots %> shoot<%= r.shoots === 1 ? '' : 's' %></h3>
+              <table><thead><tr><th>Date</th><th>Shoot</th><th>Venue</th></tr></thead><tbody>
+              <% r.attended.forEach(a => { %><tr><td><%= a.shoot_date.slice(0, 16).replace('T', ' ') %></td><td><a href="/shoots/<%= eid(a.id) %>"><%= a.name %></a></td><td><%= a.venue || '' %></td></tr><% }) %>
+              </tbody></table>
+              <form method="dialog"><button class="btn small">Close</button></form></dialog>
+          <% } else { %>0<% } %></td>
           <td><%= r.email %>
             <% if (r.email_verified_at) { %> <span class="badge ok" title="Verified <%= r.email_verified_at %> UTC">&#10003; Verified</span>
             <% } else { %> <span class="badge warn">Unverified</span>
@@ -59,4 +65,5 @@
 </section>
 
 <script src="/roster-add.js" defer></script>
+<script src="/attend.js" defer></script>
 <%- include('partials/foot') %>
