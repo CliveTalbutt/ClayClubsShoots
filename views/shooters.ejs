@@ -23,7 +23,7 @@
     <strong>Edit member</strong>
     <input name="name" maxlength="60" placeholder="Name" required aria-label="Name">
     <input type="email" name="email" maxlength="200" placeholder="name@example.com" required aria-label="Email">
-    <select name="kind" aria-label="Member or guest"><option value="member">Member</option><option value="admin">Admin (also a member)</option><option value="guest">Guest</option></select>
+    <select name="kind" aria-label="Member or guest"><option value="member">Member</option><option value="admin">Admin</option><option value="guest">Guest</option></select>
     <select name="status" aria-label="Membership status"><option value="current">Current</option><option value="expired">Expired</option></select>
     <button class="btn small">Save</button>
     <button type="button" class="btn small secondary" data-edit-cancel>Cancel</button>
@@ -33,7 +33,7 @@
     <input type="hidden" name="_csrf" value="<%= csrf %>">
     <input name="name" maxlength="60" placeholder="Name" required aria-label="Name">
     <input type="email" name="email" maxlength="200" placeholder="name@example.com" required aria-label="Email">
-    <select name="kind" aria-label="Member or guest"><option value="member">Member</option><option value="admin">Admin (also a member)</option><option value="guest">Guest</option></select>
+    <select name="kind" aria-label="Member or guest"><option value="member">Member</option><option value="admin">Admin</option><option value="guest">Guest</option></select>
     <button class="btn small">Add to membership</button>
   </form>
   <% if (roster.length) { %>
