@@ -35,7 +35,7 @@
           <td><%= r.shoots %></td>
           <td><%= r.email %></td>
           <td><span class="<%= cls %>"><%= r.status === 'expired' ? 'Expired ' + r.kind : (r.kind === 'member' ? 'Member' : 'Guest') %></span><% if (r.is_admin) { %> <span class="badge ok">Admin</span><% } %></td>
-          <td class="social-actions">
+          <td class="social-actions roster-actions">
             <% if (r.status === 'current') { %>
               <form method="post" action="/shooters/roster/<%= r.id %>/kind" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="kind" value="<%= r.kind === 'member' ? 'guest' : 'member' %>"><button class="btn small secondary">Make <%= r.kind === 'member' ? 'guest' : 'member' %></button></form>
               <% if (r.kind === 'member') { %>
@@ -45,7 +45,7 @@
             <% } else { %>
               <form method="post" action="/shooters/roster/<%= r.id %>/status" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="status" value="current"><button class="btn small secondary">Reinstate</button></form>
             <% } %>
-            <form method="post" action="/shooters/roster/<%= r.id %>/delete" class="inline" data-confirm="Remove from the roster? Past results are kept."><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small danger">Remove</button></form>
+            <form method="post" action="/shooters/roster/<%= r.id %>/delete" class="inline" data-confirm="Remove from the roster? Past results are kept."><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small danger" title="Remove from roster" aria-label="Remove <%= r.name %> from roster">&times;</button></form>
           </td>
         </tr>
       <% }) %>

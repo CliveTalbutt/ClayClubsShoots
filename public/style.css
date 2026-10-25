@@ -87,3 +87,5 @@ footer{text-align:center;color:var(--muted);padding:24px}
 .shooter-send{margin-top:10px;display:flex;flex-direction:column;gap:6px}
 .shooter-send input{width:100%;margin:0}
 .shooter-send-msg{margin:6px 0 0;font-size:.85rem}
+
+.roster-actions{white-space:nowrap}.roster-actions form{display:inline-block;margin:0 2px}.roster-actions .btn.danger{padding:6px 11px;line-height:1;font-size:1.1rem}
