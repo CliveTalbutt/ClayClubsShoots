@@ -1,49 +1,38 @@
 import SwiftUI
-import UIKit
 
-/// A large button that scores only after it has been held down for `holdTime`,
-/// so accidental brushes do not record anything. A fill shows the progress.
+/// A large button that scores the instant it is touched, with no hold delay.
+/// It fires once per touch, however long the finger stays down.
 struct HoldScoreButton: View {
     let title: String
     let color: Color
     let systemImage: String
-    var holdTime: Double = 0.3
     let action: () -> Void
 
     @State private var isPressing = false
-    @State private var fired = false
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 20).fill(color.opacity(0.35))
-            GeometryReader { geo in
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(color)
-                    .frame(width: isPressing ? geo.size.width : 0)
-                    .animation(isPressing ? .linear(duration: holdTime) : .easeOut(duration: 0.15), value: isPressing)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 20))
+            RoundedRectangle(cornerRadius: 20).fill(isPressing ? color.opacity(0.7) : color)
             VStack(spacing: 2) {
                 Image(systemName: systemImage).font(.title)
                 Text(title).font(.title2.bold())
-                Text("hold").font(.caption).opacity(0.8)
             }
             .foregroundStyle(.white)
         }
-        .scaleEffect(fired ? 0.96 : 1)
-        .animation(.easeOut(duration: 0.15), value: fired)
+        .scaleEffect(isPressing ? 0.96 : 1)
+        .animation(.easeOut(duration: 0.1), value: isPressing)
         .contentShape(RoundedRectangle(cornerRadius: 20))
-        .onLongPressGesture(minimumDuration: holdTime, maximumDistance: 60, perform: {
-            fired = true
-            action()
-            Task {
-                try? await Task.sleep(for: .milliseconds(250))
-                fired = false
-            }
-        }, onPressingChanged: { pressing in
-            isPressing = pressing
-        })
-        .accessibilityLabel("\(title), hold to score")
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard !isPressing else { return }
+                    isPressing = true
+                    action()
+                }
+                .onEnded { _ in isPressing = false }
+        )
+        .accessibilityLabel(title)
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction { action() }
     }
 }
