@@ -360,7 +360,7 @@ struct ContentView: View {
                 .font(isCompact ? .caption : .subheadline)
                 .foregroundStyle(.secondary)
 
-            DatePicker("Date and time", selection: $vm.shootStart, displayedComponents: [.date, .hourAndMinute])
+            DatePicker("Date", selection: $vm.shootStart, displayedComponents: [.date])
                 .labelsHidden()
                 .font(isCompact ? .caption2 : .subheadline)
                 .frame(maxWidth: .infinity, alignment: .leading)
