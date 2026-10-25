@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS shoots (
   name TEXT NOT NULL,
   venue TEXT,
   shoot_date TEXT NOT NULL,
-  stands INTEGER NOT NULL CHECK (stands BETWEEN 1 AND 20),
+  stands INTEGER NOT NULL CHECK (stands BETWEEN 1 AND 25),
   targets_per_stand INTEGER NOT NULL DEFAULT 10,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (user_id, external_id)
@@ -118,6 +118,21 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'shoot_t
 if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'notified'").get()) {
   db.exec('ALTER TABLE shoots ADD COLUMN notified INTEGER NOT NULL DEFAULT 0');
   db.exec('UPDATE shoots SET notified = 1');
+}
+
+// Widen the stands limit on databases created with the old 1-20 constraint by rebuilding the table.
+const shootsDef = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'shoots'").get().sql;
+if (/BETWEEN 1 AND 20/.test(shootsDef)) {
+  const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'shoots' AND sql IS NOT NULL").all();
+  db.pragma('foreign_keys = OFF');
+  db.transaction(() => {
+    db.exec(shootsDef.replace(/CREATE TABLE (IF NOT EXISTS )?"?shoots"?/i, 'CREATE TABLE shoots_new').replace('BETWEEN 1 AND 20', 'BETWEEN 1 AND 25'));
+    db.exec('INSERT INTO shoots_new SELECT * FROM shoots');
+    db.exec('DROP TABLE shoots');
+    db.exec('ALTER TABLE shoots_new RENAME TO shoots');
+    for (const i of indexes) db.exec(i.sql);
+  })();
+  db.pragma('foreign_keys = ON');
 }
 
 const hadRoster = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'roster'").get();

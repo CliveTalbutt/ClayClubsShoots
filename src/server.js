@@ -128,7 +128,7 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
   if (b.venue != null && !str(b.venue, 120)) errors.push('venue invalid');
   if (b.time != null && !(typeof b.time === 'string' && /^([01]\d|2[0-3]):(00|30)$/.test(b.time))) errors.push('time must be HH:MM on the hour or half hour');
   if (typeof b.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(b.date) || isNaN(Date.parse(b.date))) errors.push('date must be YYYY-MM-DD');
-  if (!Number.isInteger(b.stands) || b.stands < 1 || b.stands > 20) errors.push('stands must be an integer 1-20');
+  if (!Number.isInteger(b.stands) || b.stands < 1 || b.stands > 25) errors.push('stands must be an integer 1-25');
   const tps = b.targetsPerStand ?? 10;
   if (!Number.isInteger(tps) || tps < 1 || tps > 100) errors.push('targetsPerStand must be an integer 1-100');
   if (Array.isArray(b.shooters) && b.shooters.some((s) => s && s.email != null && s.email !== '' && !mailer.validEmail(s.email))) errors.push('shooter email invalid');
