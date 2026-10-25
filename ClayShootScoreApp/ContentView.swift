@@ -412,11 +412,6 @@ struct ContentView: View {
                 .font(isCompact ? .headline : .largeTitle.bold())
                 .help("Click to edit the shoot name")
 
-            TextField("Venue", text: $vm.venue)
-                .textFieldStyle(.plain)
-                .font(isCompact ? .caption : .subheadline)
-                .foregroundStyle(.secondary)
-
             DatePicker("Date", selection: $vm.shootStart, displayedComponents: [.date])
                 .labelsHidden()
                 .font(isCompact ? .caption2 : .subheadline)
