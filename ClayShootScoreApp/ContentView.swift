@@ -359,7 +359,7 @@ struct ContentView: View {
             return
         }
         guard let client = serverSettings.client, let upload = vm.makeUpload(externalId: vm.shootSessionId) else { return }
-        try? await Task.sleep(for: .seconds(2))
+        try? await Task.sleep(for: .milliseconds(400))
         var delay = 10
         while !Task.isCancelled {
             do {
