@@ -239,10 +239,10 @@ struct ContentView: View {
         Button {
             vm.isManualMode.toggle()
         } label: {
-            Label(vm.isManualMode ? "Manual" : "Voice",
-                  systemImage: vm.isManualMode ? "hand.tap.fill" : "waveform")
+            Label(vm.isManualMode ? "Voice" : "Manual",
+                  systemImage: vm.isManualMode ? "waveform" : "hand.tap.fill")
         }
-        .help(vm.isManualMode ? "Manual scoring: hold the green or red button. Tap for voice" : "Voice scoring. Tap for manual buttons")
+        .help(vm.isManualMode ? "Manual scoring is on. Tap to switch to voice" : "Voice scoring is on. Tap to switch to manual buttons")
     }
 
     /// Voice mode's counterpart to the HIT/MISS buttons: a large microphone that pulses as sounds are heard.
