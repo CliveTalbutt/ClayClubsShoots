@@ -9,6 +9,7 @@
 <body>
 <header class="nav">
   <a class="brand" href="/">&#9678; Clay Shoots</a>
+  <% if (user) { %><span class="nav-user" title="<%= user.email %>"><%= user.email %> <span class="role-badge"><%= userRole %></span></span><% } %>
   <nav>
     <% if (user) { %>
       <div class="nav-menu">
@@ -19,7 +20,6 @@
         </div>
       </div>
       <div class="nav-menu nav-menu-right">
-        <span class="nav-user" title="<%= user.email %>"><%= user.email %> <span class="role-badge"><%= userRole %></span></span>
         <a href="/account" class="nav-account" title="Signed in as <%= user.email %>">Account &#9662;</a>
         <div class="nav-sub">
           <a href="/shooters">Shooters</a>
