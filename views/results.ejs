@@ -17,11 +17,12 @@
     <input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="/results">
     <button class="btn small danger">Delete selected (<span id="bulk-count">0</span>)</button>
   </form>
-  <table>
-    <thead><tr><th><input type="checkbox" id="select-all" aria-label="Select all shoots"></th><th>Date</th><th>Shoot</th><th>Venue</th></tr></thead>
+  <input type="search" id="shoot-search" placeholder="Search shoots by name, venue or date" aria-label="Search shoots">
+  <table id="shoots-table">
+    <thead><tr><th><input type="checkbox" id="select-all" aria-label="Select all shown shoots"></th><th><button type="button" class="sort-button" data-sort="0" data-type="text">Date <span class="sort-indicator" aria-hidden="true"></span></button></th><th><button type="button" class="sort-button" data-sort="1" data-type="text">Shoot <span class="sort-indicator" aria-hidden="true"></span></button></th><th><button type="button" class="sort-button" data-sort="2" data-type="text">Venue <span class="sort-indicator" aria-hidden="true"></span></button></th></tr></thead>
     <tbody>
     <% shoots.forEach(item => { %>
-      <tr><td><input type="checkbox" class="shoot-select" form="bulk-delete" name="ids" value="<%= eid(item.id) %>" aria-label="Select shoot"></td><td><%= when(item) %></td><td><a href="/results?shoot=<%= eid(item.id) %>"><%= item.name %></a></td><td><%= item.venue || '' %></td></tr>
+      <tr><td><input type="checkbox" class="shoot-select" form="bulk-delete" name="ids" value="<%= eid(item.id) %>" aria-label="Select shoot"></td><td data-v="<%= item.shoot_date %> <%= item.shoot_time || '' %>"><%= when(item) %></td><td><a href="/results?shoot=<%= eid(item.id) %>"><%= item.name %></a></td><td><%= item.venue || '' %></td></tr>
     <% }) %>
     </tbody>
   </table>

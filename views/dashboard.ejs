@@ -62,11 +62,12 @@
     <form id="bulk-delete" method="post" action="/shoots/delete-selected" data-confirm="Delete the selected shoots and all their results? This cannot be undone." hidden><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small danger">Delete selected (<span id="bulk-count">0</span>)</button></form>
   </div>
   <% if (!shoots.length) { %><p class="muted">No shoots yet.</p><% } else { %>
-  <table>
-    <thead><tr><th><input type="checkbox" id="select-all" aria-label="Select all shoots"></th><th>Date</th><th>Shoot</th><th>Venue</th><th>Stands</th><th>Shooters</th><th></th></tr></thead>
+  <input type="search" id="shoot-search" placeholder="Search shoots by name, venue or date" aria-label="Search shoots">
+  <table id="shoots-table">
+    <thead><tr><th><input type="checkbox" id="select-all" aria-label="Select all shown shoots"></th><th><button type="button" class="sort-button" data-sort="0" data-type="text">Date <span class="sort-indicator" aria-hidden="true"></span></button></th><th><button type="button" class="sort-button" data-sort="1" data-type="text">Shoot <span class="sort-indicator" aria-hidden="true"></span></button></th><th><button type="button" class="sort-button" data-sort="2" data-type="text">Venue <span class="sort-indicator" aria-hidden="true"></span></button></th><th><button type="button" class="sort-button" data-sort="3" data-type="number">Stands <span class="sort-indicator" aria-hidden="true"></span></button></th><th><button type="button" class="sort-button" data-sort="4" data-type="number">Shooters <span class="sort-indicator" aria-hidden="true"></span></button></th><th></th></tr></thead>
     <tbody>
     <% shoots.forEach(s => { %>
-      <tr><td><input type="checkbox" class="shoot-select" form="bulk-delete" name="ids" value="<%= eid(s.id) %>" aria-label="Select shoot"></td><td><%= when(s) %></td><td><a href="/shoots/<%= eid(s.id) %>"><%= s.name %></a></td><td><%= s.venue || '' %></td><td><%= s.stands %></td><td><%= s.shooters %></td><td><form method="post" action="/shoots/<%= eid(s.id) %>/delete" class="inline" data-confirm="Delete this shoot and all its results? This cannot be undone."><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="/dashboard"><button class="btn small danger">Delete</button></form></td></tr>
+      <tr><td><input type="checkbox" class="shoot-select" form="bulk-delete" name="ids" value="<%= eid(s.id) %>" aria-label="Select shoot"></td><td data-v="<%= s.shoot_date %> <%= s.shoot_time || '' %>"><%= when(s) %></td><td><a href="/shoots/<%= eid(s.id) %>"><%= s.name %></a></td><td><%= s.venue || '' %></td><td><%= s.stands %></td><td><%= s.shooters %></td><td><form method="post" action="/shoots/<%= eid(s.id) %>/delete" class="inline" data-confirm="Delete this shoot and all its results? This cannot be undone."><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="/dashboard"><button class="btn small danger">Delete</button></form></td></tr>
     <% }) %>
     </tbody>
   </table>
