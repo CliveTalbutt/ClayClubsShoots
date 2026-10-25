@@ -205,6 +205,14 @@ app.use((req, res, next) => {
   res.locals.user = req.session.userId
     ? db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId) : null;
   res.locals.active = isActive(res.locals.user);
+  // Logins are club accounts: the super admin is you, a club's own login is its admin, and a login
+  // whose email is a non-admin member on that club's membership list is shown as a member.
+  res.locals.userRole = null;
+  if (res.locals.user) {
+    const u = res.locals.user;
+    const m = u.is_super === 1 ? null : db.prepare("SELECT kind, is_admin FROM roster WHERE user_id = ? AND lower(email) = lower(?) AND status = 'current' LIMIT 1").get(u.id, u.email);
+    res.locals.userRole = u.is_super === 1 ? 'Super admin' : (m && m.kind === 'member' && m.is_admin !== 1 ? 'Member' : 'Admin');
+  }
   res.locals.when = (s) => s.shoot_date + (s.shoot_time ? ` ${s.shoot_time}` : '');
   res.locals.cpsaClasses = CPSA_CLASSES;
   res.locals.eid = (id) => encodeId(req.session.userId, id);
