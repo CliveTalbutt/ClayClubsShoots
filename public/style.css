@@ -113,3 +113,6 @@ footer{text-align:center;color:var(--muted);padding:24px}
 .acting-banner form{margin:0}
 .club-row>summary{cursor:pointer;padding:.25rem 0}
 .club-row[open]>summary{margin-bottom:.75rem}
+.linkish{background:none;border:0;padding:0;color:var(--accent,#f59e0b);text-decoration:underline;cursor:pointer;font:inherit}
+.club-dialog{max-width:min(760px,94vw);width:100%;max-height:85vh;overflow:auto;border-radius:10px;padding:1rem 1.25rem}
+.club-dialog-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin:0}

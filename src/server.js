@@ -347,10 +347,13 @@ app.get('/admin/clubs', needAuth, needRealSuper, (req, res) => {
     if (!clubs.has(a.club_name)) clubs.set(a.club_name, { name: a.club_name, accounts: [], shoots: [] });
     clubs.get(a.club_name).accounts.push(a);
   }
-  const shootsOf = db.prepare('SELECT id, name, venue, shoot_date, stands, (SELECT COUNT(DISTINCT shooter) FROM results WHERE shoot_id = shoots.id) AS shooters FROM shoots WHERE user_id = ? ORDER BY shoot_date DESC LIMIT 50');
+  const shootsOf = db.prepare('SELECT id, name, venue, shoot_date, stands, targets_per_stand, (SELECT COUNT(DISTINCT shooter) FROM results WHERE shoot_id = shoots.id) AS shooters FROM shoots WHERE user_id = ? ORDER BY shoot_date DESC LIMIT 200');
+  const shootersOf = db.prepare(`SELECT x.shooter, COUNT(DISTINCT x.shoot_id) AS shoots, SUM(x.score) AS total,
+      (SELECT kind FROM roster r WHERE r.user_id = s.user_id AND r.name_key = lower(trim(x.shooter)) LIMIT 1) AS kind,
+      (SELECT status FROM roster r WHERE r.user_id = s.user_id AND r.name_key = lower(trim(x.shooter)) LIMIT 1) AS status
+    FROM results x JOIN shoots s ON s.id = x.shoot_id WHERE s.user_id = ? GROUP BY x.shooter ORDER BY total DESC, x.shooter`);
   for (const c of clubs.values()) {
-    const best = c.accounts.reduce((m, a) => (a.shoots > m.shoots ? a : m), c.accounts[0]);
-    c.shoots = shootsOf.all(best.id);
+    for (const a of c.accounts) { a.shootList = shootsOf.all(a.id); a.shooterList = shootersOf.all(a.id); }
   }
   res.render('clubs', { clubs: [...clubs.values()] });
 });
