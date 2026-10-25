@@ -95,5 +95,5 @@ footer{text-align:center;color:var(--muted);padding:24px}
 .attend-dialog form{margin-top:12px}
 .roster-row{cursor:pointer}
 .roster-row:hover,.roster-row.selected{background:rgba(255,255,255,.05)}
-.roster-edit{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:12px;align-items:center}
-.roster-edit [data-edit-guid]{font-size:.7rem}
+.roster-form{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:12px;align-items:center}
+.roster-form [data-edit-guid]{font-size:.7rem}

@@ -18,23 +18,16 @@
 <section class="card" id="roster">
   <h2>Membership</h2>
   <p class="muted">Registered shooters for this club. The iPhone app lists <span class="tag-member">members</span> and <span class="tag-guest">guests</span> that are current; <span class="tag-expired">expired</span> members are kept for their past shoots but are not offered to the app. Shooters added from the app arrive as guests.</p>
-  <form method="post" id="roster-edit" hidden class="social-actions roster-edit">
+  <form method="post" id="roster-form" action="/shooters/roster/add" class="social-actions roster-form">
     <input type="hidden" name="_csrf" value="<%= csrf %>">
-    <strong>Edit member</strong>
+    <strong data-form-title>New member</strong>
     <input name="name" maxlength="60" placeholder="Name" required aria-label="Name">
     <input type="email" name="email" maxlength="200" placeholder="name@example.com" required aria-label="Email">
     <select name="kind" aria-label="Member or guest"><option value="member">Member</option><option value="admin">Admin</option><option value="guest">Guest</option></select>
-    <select name="status" aria-label="Membership status"><option value="current">Current</option><option value="expired">Expired</option></select>
-    <button class="btn small">Save</button>
-    <button type="button" class="btn small secondary" data-edit-cancel>Cancel</button>
+    <select name="status" aria-label="Membership status" data-edit-only hidden disabled><option value="current">Current</option><option value="expired">Expired</option></select>
+    <button class="btn small" data-form-submit>Add to membership</button>
+    <button type="button" class="btn small secondary" data-form-cancel hidden>Cancel</button>
     <span class="muted" data-edit-guid></span>
-  </form>
-  <form method="post" action="/shooters/roster/add" class="social-actions">
-    <input type="hidden" name="_csrf" value="<%= csrf %>">
-    <input name="name" maxlength="60" placeholder="Name" required aria-label="Name">
-    <input type="email" name="email" maxlength="200" placeholder="name@example.com" required aria-label="Email">
-    <select name="kind" aria-label="Member or guest"><option value="member">Member</option><option value="admin">Admin</option><option value="guest">Guest</option></select>
-    <button class="btn small">Add to membership</button>
   </form>
   <% if (roster.length) { %>
   <table class="results-table social-table">
@@ -75,7 +68,6 @@
   <% } else { %><p class="muted">No shooters in the membership yet.</p><% } %>
 </section>
 
-<script src="/roster-add.js" defer></script>
 <script src="/attend.js" defer></script>
 <script src="/roster-edit.js" defer></script>
 <%- include('partials/foot') %>

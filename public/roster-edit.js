@@ -1,36 +1,59 @@
+// One form serves both "new member" and "edit member"; clicking a row switches it to edit mode.
 (function () {
-  var form = document.getElementById('roster-edit');
+  var form = document.getElementById('roster-form');
   if (!form) return;
-  var rows = document.querySelectorAll('tr[data-edit]');
+  var el = form.elements, title = form.querySelector('[data-form-title]');
+  var submit = form.querySelector('[data-form-submit]'), cancel = form.querySelector('[data-form-cancel]');
+  var status = form.querySelector('[data-edit-only]'), guid = form.querySelector('[data-edit-guid]');
+  var addAction = form.getAttribute('action');
   var selected = null;
-  function pick(row) {
-    var d = JSON.parse(row.dataset.edit);
-    if (selected) selected.classList.remove('selected');
-    selected = row; row.classList.add('selected');
-    form.action = '/shooters/roster/' + d.id + '/edit';
-    form.elements.name.value = d.name;
-    form.elements.email.value = d.email;
-    form.elements.kind.value = d.kind;
-    form.elements.status.value = d.status;
-    form.querySelector('[data-edit-guid]').textContent = 'ID ' + d.guid;
-    form.hidden = false;
-    form.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    form.elements.name.focus();
+
+  var proper = function (v) {
+    return v.toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, function (m, p, c) { return p + c.toUpperCase(); });
+  };
+  el.name.addEventListener('input', function () {
+    var pos = el.name.selectionStart, v = proper(el.name.value);
+    if (v !== el.name.value) { el.name.value = v; el.name.setSelectionRange(pos, pos); }
+  });
+  el.name.addEventListener('blur', function () { el.name.value = proper(el.name.value.trim().replace(/\s+/g, ' ')); });
+
+  function ready() {
+    submit.hidden = !(el.name.value.trim() && el.email.value.trim() && el.email.checkValidity());
   }
-  rows.forEach(function (row) {
+  form.addEventListener('input', ready);
+
+  function setMode(row) {
+    if (selected) selected.classList.remove('selected');
+    selected = row;
+    var editing = !!row;
+    status.hidden = status.disabled = !editing;
+    cancel.hidden = !editing;
+    if (editing) {
+      var d = JSON.parse(row.dataset.edit);
+      row.classList.add('selected');
+      form.action = '/shooters/roster/' + d.id + '/edit';
+      title.textContent = 'Edit member';
+      submit.textContent = 'Save';
+      el.name.value = d.name; el.email.value = d.email; el.kind.value = d.kind; status.value = d.status;
+      guid.textContent = 'ID ' + d.guid;
+      form.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      el.name.focus();
+    } else {
+      form.action = addAction;
+      title.textContent = 'New member';
+      submit.textContent = 'Add to membership';
+      form.reset();
+      guid.textContent = '';
+    }
+    ready();
+  }
+
+  document.querySelectorAll('tr[data-edit]').forEach(function (row) {
     row.addEventListener('click', function (e) {
       if (e.target.closest('button, a, form, input, select, dialog')) return;
-      pick(row);
+      setMode(row);
     });
   });
-  form.elements.name.addEventListener('input', function () {
-    var el = form.elements.name, pos = el.selectionStart;
-    var v = el.value.toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, function (m, p, c) { return p + c.toUpperCase(); });
-    if (v !== el.value) { el.value = v; el.setSelectionRange(pos, pos); }
-  });
-  form.querySelector('[data-edit-cancel]').addEventListener('click', function () {
-    form.hidden = true;
-    if (selected) selected.classList.remove('selected');
-    selected = null;
-  });
+  cancel.addEventListener('click', function () { setMode(null); });
+  ready();
 })();
