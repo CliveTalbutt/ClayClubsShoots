@@ -155,10 +155,15 @@ if (!db.prepare('SELECT 1 FROM users WHERE is_super = 1').get()) {
 for (const [col, def] of [['email_verified_at', 'TEXT'], ['verify_token_hash', 'TEXT'], ['verify_sent_at', 'TEXT']]) {
   if (!db.prepare("SELECT 1 FROM pragma_table_info('roster') WHERE name = ?").get(col)) db.exec(`ALTER TABLE roster ADD COLUMN ${col} ${def}`);
 }
+// Stable identity for each roster entry so renames and email changes never break links.
+if (!db.prepare("SELECT 1 FROM pragma_table_info('roster') WHERE name = 'guid'").get()) db.exec('ALTER TABLE roster ADD COLUMN guid TEXT');
+for (const r of db.prepare('SELECT id FROM roster WHERE guid IS NULL').all()) db.prepare('UPDATE roster SET guid = ? WHERE id = ?').run(require('crypto').randomUUID(), r.id);
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_roster_guid ON roster(guid)');
 // One-off: shooters who already had an email address become current members.
 if (!hadRoster) {
   db.exec(`INSERT OR IGNORE INTO roster (user_id, name, name_key, email, kind, status)
     SELECT user_id, shooter, shooter_key, lower(email), 'member', 'current' FROM shooter_emails`);
+  for (const r of db.prepare('SELECT id FROM roster WHERE guid IS NULL').all()) db.prepare('UPDATE roster SET guid = ? WHERE id = ?').run(require('crypto').randomUUID(), r.id);
 }
 if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'email_results'").get()) {
   db.exec('ALTER TABLE users ADD COLUMN email_results INTEGER NOT NULL DEFAULT 1');

@@ -24,7 +24,7 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
     return { name, email, errors };
   }
 
-  const present = (r) => ({ id: r.id, name: r.name, email: r.email, kind: r.kind, isAdmin: r.is_admin === 1, verified: !!r.email_verified_at });
+  const present = (r) => ({ id: r.id, guid: r.guid, name: r.name, email: r.email, kind: r.kind, isAdmin: r.is_admin === 1, verified: !!r.email_verified_at });
 
   // What the app shows: guests and current members only.
   function listCurrent(userId) {
@@ -46,7 +46,7 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
       }
       return { status: 200, body: { shooter: present(existing), existing: true } };
     }
-    const r = db.prepare('INSERT INTO roster (user_id, name, name_key, email, kind, is_admin) VALUES (?,?,?,?,?,?)').run(userId, name, key(name), email, kind, kind === 'member' && admin ? 1 : 0);
+    const r = db.prepare('INSERT INTO roster (user_id, name, name_key, email, kind, is_admin, guid) VALUES (?,?,?,?,?,?,?)').run(userId, name, key(name), email, kind, kind === 'member' && admin ? 1 : 0, crypto.randomUUID());
     mailer.saveEmails(userId, [{ name, email }]);
     return { status: 201, body: { shooter: present(db.prepare('SELECT * FROM roster WHERE id = ?').get(r.lastInsertRowid)) } };
   }
@@ -98,6 +98,45 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
     if (r.status === 201) return back(res, `Added ${r.body.shooter.name} as ${admin ? 'an admin member' : 'a ' + kind}.`);
     if (r.status === 200) return back(res, null, 'That shooter is already on the roster.');
     back(res, null, (r.body.details || ['Could not add shooter.']).join('; '));
+  });
+
+  // Edits every detail of one roster entry. Identity is the guid, so a rename is carried through to the
+  // shoot results and saved email for that club instead of orphaning them.
+  router.post('/:id/edit', needAuth, (req, res) => {
+    const uid = req.session.userId;
+    const r = mine(req);
+    if (!r) return back(res, null, 'Unknown shooter.');
+    const { name, email, errors } = validate(req.body);
+    if (errors.length) return back(res, null, errors.join('; '));
+    const admin = req.body.kind === 'admin';
+    const kind = admin || req.body.kind === 'member' ? 'member' : 'guest';
+    const status = req.body.status === 'expired' ? 'expired' : 'current';
+    const nk = key(name);
+    if (db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND id != ? AND (name_key = ? AND (email = ? OR ? != ?))').get(uid, r.id, nk, email, nk, r.name_key)) {
+      return back(res, null, 'Another roster entry already uses that name or name and email.');
+    }
+    const emailChanged = email !== r.email;
+    try {
+      db.exec('BEGIN');
+      if (nk !== r.name_key) {
+        db.prepare('UPDATE results SET shooter = ? WHERE lower(shooter) = ? AND shoot_id IN (SELECT id FROM shoots WHERE user_id = ?)').run(name, r.name_key, uid);
+        db.prepare('DELETE FROM shooter_emails WHERE user_id = ? AND shooter_key = ?').run(uid, r.name_key);
+      } else {
+        db.prepare('UPDATE results SET shooter = ? WHERE lower(shooter) = ? AND shoot_id IN (SELECT id FROM shoots WHERE user_id = ?)').run(name, nk, uid);
+      }
+      db.prepare(`UPDATE roster SET name = ?, name_key = ?, email = ?, kind = ?, is_admin = ?, status = ?,
+        email_verified_at = CASE WHEN ? THEN NULL ELSE email_verified_at END,
+        verify_token_hash = CASE WHEN ? THEN NULL ELSE verify_token_hash END,
+        verify_sent_at = CASE WHEN ? THEN NULL ELSE verify_sent_at END WHERE id = ?`)
+        .run(name, nk, email, kind, kind === 'member' && admin ? 1 : 0, status, +emailChanged, +emailChanged, +emailChanged, r.id);
+      mailer.saveEmails(uid, [{ name, email }]);
+      db.exec('COMMIT');
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch {}
+      return back(res, null, 'Could not save: that name clashes with existing shoot results.');
+    }
+    if (emailChanged) sendVerification(uid, r.id).catch(() => {});
+    back(res, `Saved changes to ${name}.`);
   });
 
   router.post('/:id/verify', needAuth, wrap(async (req, res) => {
