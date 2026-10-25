@@ -16,6 +16,9 @@ for (const k of ['SESSION_SECRET', 'APP_ENCRYPTION_KEY']) {
 }
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const PROD = process.env.NODE_ENV === 'production';
+const tlsConfig = require('./tls').load(process.env.BASE_URL || '');
+// Encrypted transport is mandatory whenever the server terminates TLS itself or runs in production.
+const SECURE = PROD || !!tlsConfig;
 const encKey = Buffer.from(process.env.APP_ENCRYPTION_KEY, 'hex');
 
 // ---- helpers ----
@@ -64,10 +67,17 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '..', 'views'));
 app.set('trust proxy', 1);
 // Over plain http (local network testing) the default upgrade-insecure-requests and HSTS break CSS/JS.
-app.use(helmet(PROD ? {} : {
+// HSTS is only sent for publicly trusted certificates; a browser cannot bypass it for a self-signed one.
+const selfSignedTls = !!(tlsConfig && tlsConfig.selfSigned);
+app.use(helmet(SECURE ? { strictTransportSecurity: selfSignedTls ? false : { maxAge: 31536000, includeSubDomains: true } } : {
   contentSecurityPolicy: { directives: { ...helmet.contentSecurityPolicy.getDefaultDirectives(), 'upgrade-insecure-requests': null } },
   strictTransportSecurity: false,
 }));
+app.use((req, res, next) => {
+  if (!SECURE || req.secure) return next();
+  if (req.path.startsWith('/api/')) return res.status(426).json({ error: 'HTTPS is required' });
+  return res.status(426).send('HTTPS is required');
+});
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const payments = require('./payments')({ db, baseUrl: BASE_URL, needAuth: (q, s, n) => needAuth(q, s, n), wrap });
@@ -196,7 +206,7 @@ app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, sameSite: 'lax', secure: PROD, maxAge: 1000 * 60 * 60 * 8 },
+  cookie: { httpOnly: true, sameSite: 'lax', secure: SECURE, maxAge: 1000 * 60 * 60 * 8 },
 }));
 
 app.use((req, res, next) => {
@@ -540,4 +550,13 @@ app.use((err, req, res, next) => {
   res.status(500).send('Something went wrong.');
 });
 
-app.listen(process.env.PORT || 3000, () => console.log(`Clay Shoots running on ${BASE_URL}`));
+const port = process.env.PORT || 3000;
+if (tlsConfig) {
+  require('https').createServer({ cert: tlsConfig.cert, key: tlsConfig.key, minVersion: 'TLSv1.2', honorCipherOrder: true }, app)
+    .listen(port, () => {
+      console.log(`Clay Shoots running securely on ${BASE_URL}`);
+      if (tlsConfig.fingerprint) console.log(`Server key fingerprint (enter this in the phone app): ${tlsConfig.fingerprint}`);
+    });
+} else {
+  app.listen(port, () => console.log(`Clay Shoots running on ${BASE_URL} (NOT encrypted)`));
+}
