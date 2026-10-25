@@ -17,6 +17,28 @@ import SwiftUI
 /// window. Whenever a shooter is selected (by voice, by clicking their name or by
 /// the scoring moving on) their row is scrolled vertically into view, leaving the
 /// horizontal position alone so the stands being viewed stay put.
+/// Briefly flashes a cell whenever its score changes (by tap or voice).
+private struct FlashOnChange: ViewModifier {
+    let value: Int
+    @State private var flashing = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.yellow.opacity(flashing ? 0.8 : 0))
+                    .allowsHitTesting(false)
+            )
+            .onChange(of: value) { _, _ in
+                flashing = true
+                Task {
+                    try? await Task.sleep(for: .milliseconds(350))
+                    withAnimation(.easeOut(duration: 0.2)) { flashing = false }
+                }
+            }
+    }
+}
+
 struct ScoreTableView: View {
     var vm: ShootViewModel
 
@@ -304,6 +326,7 @@ struct ScoreTableView: View {
                         .frame(width: cellWidth(for: stand), height: isActiveCell ? expandedCellHeight : targetCellHeight)
                         .background(cellColor(for: score))
                         .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .modifier(FlashOnChange(value: score))
                         .contentShape(Rectangle())
                         .onTapGesture {
                             toggleScore(shooterIndex: shooterIndex, stand: stand, target: target, current: score)
