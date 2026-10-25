@@ -574,11 +574,7 @@ struct ContentView: View {
             }
 
             if let exportMessage {
-                Text(exportMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .modifier(FlashOnChange(value: exportMessage))
+                SyncStatusLabel(text: exportMessage)
             }
         }
         .frame(maxWidth: .infinity)
@@ -598,4 +594,24 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+}
+
+
+/// The sync status line. On each change it lights up in the accent gold and then
+/// fades smoothly back to its normal grey, as a single highlight.
+private struct SyncStatusLabel: View {
+    let text: String
+    @State private var lit = false
+
+    var body: some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(lit ? Color.accentColor : Color.secondary)
+            .onChange(of: text) { _, _ in
+                var instant = Transaction()
+                instant.disablesAnimations = true
+                withTransaction(instant) { lit = true }
+                withAnimation(.easeOut(duration: 0.9)) { lit = false }
+            }
+    }
 }
