@@ -231,8 +231,16 @@ struct ScoreTableView: View {
                 Text(shooter.name.capitalized)
                     .font(.subheadline)
                     .fontWeight(isCurrentShooter ? .bold : .regular)
-                    .foregroundStyle(isCurrentShooter ? Color.accentColor : .primary)
+                    .foregroundStyle(isCurrentShooter ? Color.accentColor : (vm.kind(for: shooter.name).map { $0 == "member" ? Color.green : Color.red } ?? .primary))
                     .lineLimit(1)
+                if vm.kind(for: shooter.name) == "guest" {
+                    Text("G")
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 4)
+                        .background(.red, in: .capsule)
+                        .foregroundStyle(.white)
+                        .accessibilityLabel("Guest")
+                }
                 if vm.email(for: shooter.name) != nil {
                     Image(systemName: "envelope.fill")
                         .font(.caption2)

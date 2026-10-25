@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var exportMessage: String?
     @State private var isShowingHelp = false
     @State private var isShowingSettings = false
+    @State private var isShowingRoster = false
     @State private var serverSettings = ClayShootsSettings()
 
     /// Keyboard focus sits on the score table so the Y and X keys score the
@@ -134,6 +135,10 @@ struct ContentView: View {
                     .presentationDetents([.medium, .large])
             }
         }
+        .sheet(isPresented: $isShowingRoster) {
+            RosterView(vm: vm, settings: serverSettings)
+                .presentationDetents([.large])
+        }
         .sheet(isPresented: $isShowingSettings) {
             SendToServerView(settings: serverSettings)
                 .presentationDetents([.medium, .large])
@@ -156,6 +161,7 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var controlPanel: some ToolbarContent {
         ToolbarItemGroup {
+            rosterButton
             addShootersButton
             modeButton
             listenButton
@@ -202,6 +208,7 @@ struct ContentView: View {
         .sharedBackgroundVisibility(.hidden)
 
         ToolbarItemGroup {
+            rosterButton
             addShootersButton
             modeButton
             listenButton
@@ -239,6 +246,16 @@ struct ContentView: View {
             HoldScoreButton(title: "MISS", color: .red, systemImage: "xmark") { vm.recordMiss() }
         }
         .frame(height: isCompact ? 90 : 120)
+    }
+
+    private var rosterButton: some View {
+        Button {
+            isShowingRoster = true
+        } label: {
+            Label("Roster", systemImage: "person.3.fill")
+        }
+        .help("Choose who is shooting from the club's registered shooters")
+        .disabled(vm.isComplete)
     }
 
     private var addShootersButton: some View {

@@ -60,6 +60,33 @@ class ShootViewModel {
     /// Email addresses by lowercased shooter name, remembered between shoots.
     private(set) var emails: [String: String] = (UserDefaults.standard.dictionary(forKey: "shooterEmails") as? [String: String]) ?? [:]
 
+    /// "member" or "guest" by lowercased name, for shooters picked from the roster.
+    var kinds: [String: String] = [:]
+
+    func kind(for name: String) -> String? {
+        kinds[name.trimmingCharacters(in: .whitespaces).lowercased()]
+    }
+
+    /// Makes the shoot's shooters match the ticked roster entries. Anyone who has
+    /// already scored stays, even if unticked, so no result is lost.
+    func applyRoster(_ selected: [RosterShooter]) {
+        let wanted = Set(selected.map { $0.name.lowercased() })
+        for index in shooters.indices.reversed() {
+            let shooter = shooters[index]
+            let scored = shooter.scores.contains { $0.contains { $0 >= 0 } }
+            if !wanted.contains(shooter.name.lowercased()), !scored, kinds[shooter.name.lowercased()] != nil {
+                removeShooter(at: index)
+            }
+        }
+        for entry in selected {
+            kinds[entry.name.lowercased()] = entry.kind
+            setEmail(entry.email, for: entry.name)
+            if !shooters.contains(where: { $0.name.lowercased() == entry.name.lowercased() }) {
+                addShooter(named: entry.name)
+            }
+        }
+    }
+
     func email(for name: String) -> String? {
         let e = emails[name.trimmingCharacters(in: .whitespaces).lowercased()]
         return (e?.isEmpty ?? true) ? nil : e

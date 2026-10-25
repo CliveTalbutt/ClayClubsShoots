@@ -32,6 +32,16 @@ nonisolated struct ShootUploadReceipt: Decodable, Sendable {
     let url: String
 }
 
+/// A registered shooter from the club's roster on the website.
+nonisolated struct RosterShooter: Codable, Identifiable, Hashable, Sendable {
+    let id: Int
+    let name: String
+    let email: String
+    /// "member" or "guest".
+    let kind: String
+    var isGuest: Bool { kind != "member" }
+}
+
 nonisolated enum ClayShootsError: LocalizedError {
     case notConfigured
     case invalidURL
@@ -81,6 +91,35 @@ nonisolated struct ClayShootsClient: Sendable {
         try Self.check(response, data: data, expected: 200)
         struct Ping: Decodable { let club: String }
         return (try? JSONDecoder().decode(Ping.self, from: data))?.club ?? "your club"
+    }
+
+    /// The club's current members and guests. Expired members are never returned.
+    func fetchRoster() async throws -> [RosterShooter] {
+        var request = URLRequest(url: baseURL.appending(path: "api/v1/shooters"))
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await perform(request)
+        try Self.check(response, data: data, expected: 200)
+        struct Reply: Decodable { let shooters: [RosterShooter] }
+        return try JSONDecoder().decode(Reply.self, from: data).shooters
+    }
+
+    /// Adds a new shooter to the club's roster (as a guest) and returns the saved entry.
+    func addRosterShooter(name: String, email: String) async throws -> RosterShooter {
+        var request = URLRequest(url: baseURL.appending(path: "api/v1/shooters"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["name": name, "email": email])
+        let (data, response) = try await perform(request)
+        guard response.statusCode == 200 || response.statusCode == 201 else {
+            if response.statusCode == 409 { throw ClayShootsError.validation(["that shooter's membership has expired"]) }
+            try Self.check(response, data: data, expected: 201)
+            throw ClayShootsError.server(response.statusCode)
+        }
+        struct Reply: Decodable { let shooter: RosterShooter }
+        return try JSONDecoder().decode(Reply.self, from: data).shooter
     }
 
     func send(_ upload: ShootUpload) async throws -> ShootUploadReceipt {
