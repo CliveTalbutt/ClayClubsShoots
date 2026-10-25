@@ -5,7 +5,18 @@ if (watched.some((p) => location.pathname.startsWith(p))) {
   let last = null;
   const busy = () => {
     const a = document.activeElement;
-    return a && (a.matches('input, textarea, select') || a.isContentEditable);
+    return a && (a.matches('input, textarea') || a.isContentEditable);
+  };
+  // Keep the shoot dropdown current in place, even while it is open or focused.
+  const refreshDropdown = async () => {
+    const select = document.getElementById('results-shoot');
+    if (!select) return;
+    const html = await (await fetch(location.href, { cache: 'no-store' })).text();
+    const fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('results-shoot');
+    if (!fresh) return;
+    const keep = select.value;
+    select.replaceChildren(...[...fresh.children].map((o) => document.importNode(o, true)));
+    if ([...select.options].some((o) => o.value === keep)) select.value = keep;
   };
   const check = async () => {
     if (document.hidden) return;
@@ -14,7 +25,11 @@ if (watched.some((p) => location.pathname.startsWith(p))) {
       if (!res.ok) return;
       const { v } = await res.json();
       if (last === null) last = v;
-      else if (v !== last && !busy()) location.reload();
+      else if (v !== last) {
+        last = v;
+        await refreshDropdown();
+        if (!busy() && document.activeElement?.tagName !== 'SELECT') location.reload();
+      }
     } catch { /* offline or restarting: try again next time */ }
   };
   check();
