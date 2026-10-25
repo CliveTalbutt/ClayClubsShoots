@@ -1,0 +1,19 @@
+<%- include('partials/head') %>
+<h1>Test payment</h1>
+<section class="card">
+  <p><span class="badge warn">Dummy payment</span> No money is taken. This stands in for a real card checkout while payments are being set up.</p>
+  <h2><%= plan.label %> &mdash; <%= price %></h2>
+  <p class="muted"><%= plan.blurb %></p>
+  <form method="post" action="/billing/dummy/confirm">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <input type="hidden" name="plan" value="<%= plan.key %>">
+    <label>Card number <input value="4242 4242 4242 4242" readonly></label>
+    <label>Expiry <input value="12 / 34" readonly></label>
+    <label>CVC <input value="123" readonly></label>
+    <p>
+      <button class="btn" name="outcome" value="pay">Pay <%= price %> (test)</button>
+      <button class="btn secondary" name="outcome" value="cancel">Cancel</button>
+    </p>
+  </form>
+</section>
+<%- include('partials/foot') %>

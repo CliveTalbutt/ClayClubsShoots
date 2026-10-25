@@ -13,6 +13,7 @@ const cleanName = (raw) => String(raw || '').trim().replace(/\s+/g, ' ')
   .toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (m, p, c) => p + c.toUpperCase());
 
 module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) {
+  const allowance = require('./allowance')(db);
   const key = (n) => String(n).trim().toLowerCase();
 
   function validate(body) {
@@ -46,6 +47,8 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
       }
       return { status: 200, body: { shooter: present(existing), existing: true } };
     }
+    const over = allowance.check(userId, kind);
+    if (over) return { status: 402, body: { error: 'shooter_limit', details: [over] } };
     const r = db.prepare('INSERT INTO roster (user_id, name, name_key, email, kind, is_admin, guid) VALUES (?,?,?,?,?,?,?)').run(userId, name, key(name), email, kind, kind === 'member' && admin ? 1 : 0, crypto.randomUUID());
     mailer.saveEmails(userId, [{ name, email }]);
     return { status: 201, body: { shooter: present(db.prepare('SELECT * FROM roster WHERE id = ?').get(r.lastInsertRowid)) } };
@@ -115,6 +118,10 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
     if (db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND id != ? AND (name_key = ? AND (email = ? OR ? != ?))').get(uid, r.id, nk, email, nk, r.name_key)) {
       return back(res, null, 'Another membership entry already uses that name or name and email.');
     }
+    if (status === 'current') {
+      const over = allowance.check(uid, kind, r.id);
+      if (over) return back(res, null, over);
+    }
     const emailChanged = email !== r.email;
     try {
       db.exec('BEGIN');
@@ -150,6 +157,10 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
     const r = mine(req);
     if (!r) return back(res, null, 'Unknown shooter.');
     const kind = req.body.kind === 'member' ? 'member' : 'guest';
+    if (r.status === 'current') {
+      const over = allowance.check(req.session.userId, kind, r.id);
+      if (over) return back(res, null, over);
+    }
     db.prepare('UPDATE roster SET kind = ?, is_admin = CASE WHEN ? = \'member\' THEN is_admin ELSE 0 END WHERE id = ?').run(kind, kind, r.id);
     back(res, `${r.name} is now a ${kind}.`);
   });
@@ -167,6 +178,10 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
     const r = mine(req);
     if (!r) return back(res, null, 'Unknown shooter.');
     const status = req.body.status === 'expired' ? 'expired' : 'current';
+    if (status === 'current') {
+      const over = allowance.check(req.session.userId, r.kind, r.id);
+      if (over) return back(res, null, over);
+    }
     db.prepare('UPDATE roster SET status = ? WHERE id = ?').run(status, r.id);
     back(res, status === 'expired' ? `${r.name}'s membership is marked expired. Past results are kept.` : `${r.name} is current again.`);
   });

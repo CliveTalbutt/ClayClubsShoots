@@ -2,13 +2,22 @@
 <h1>Shoot clubs</h1>
 <p class="muted">Each club has its own accounts, shoots and shooters. Click a shoots or shooters number for the details, or open an account to see the site exactly as that user does; a banner lets you return here.</p>
 
+<% const subCls = { ok: 'ok', soon: 'warn', expired: 'warn', none: 'warn' }; %>
+<% const dmy = (sec) => new Date(sec * 1000).toLocaleDateString('en-GB'); %>
+<% if (note) { %><p><span class="badge ok"><%= note %></span></p><% } %>
+<form method="post" action="/admin/reminders/run" class="inline">
+  <input type="hidden" name="_csrf" value="<%= csrf %>">
+  <button class="btn small secondary">Run renewal reminder check now</button>
+  <span class="muted">Runs automatically every 6 hours: 30, 14, 7 and 1 days before expiry, when it lapses, and a week later.</span>
+</form>
+
 <% if (!clubs.length) { %><p class="muted">No clubs yet.</p><% } %>
 <% clubs.forEach(function (c, ci) { %>
 <% const top = c.accounts.reduce(function (m, a) { return a.shoots > m.shoots ? a : m; }, c.accounts[0]); %>
 <details class="card club-row">
-  <summary><strong><%= c.name %></strong> <span class="muted">&middot; <%= c.accounts.length %> account<%= c.accounts.length === 1 ? '' : 's' %> &middot; <%= top.shoots %> shoot<%= top.shoots === 1 ? '' : 's' %> &middot; <%= top.shooters %> shooter<%= top.shooters === 1 ? '' : 's' %></span></summary>
+  <summary><strong><%= c.name %></strong> <span class="muted">&middot; <%= c.accounts.length %> account<%= c.accounts.length === 1 ? '' : 's' %> &middot; <%= top.shoots %> shoot<%= top.shoots === 1 ? '' : 's' %> &middot; <%= top.shooters %> shooter<%= top.shooters === 1 ? '' : 's' %></span> <span class="badge <%= subCls[c.sub.state] %>"><%= c.sub.label %></span></summary>
   <table>
-    <thead><tr><th>Account</th><th>Role</th><th>Shoots</th><th>Shooters</th><th>Latest shoot</th><th></th></tr></thead>
+    <thead><tr><th>Account</th><th>Role</th><th>Shoots</th><th>Shooters</th><th>Subscription</th><th>Latest shoot</th><th></th></tr></thead>
     <tbody>
     <% c.accounts.forEach(function (a) { %>
       <tr>
@@ -16,6 +25,7 @@
         <td><span class="role-badge"><%= a.role %></span></td>
         <td><button type="button" class="linkish" data-dialog="shoots-<%= a.id %>"><%= a.shoots %></button></td>
         <td><button type="button" class="linkish" data-dialog="shooters-<%= a.id %>"><%= a.shooters %></button></td>
+        <td><button type="button" class="linkish" data-dialog="sub-<%= a.id %>"><span class="badge <%= subCls[a.sub.state] %>"><%= a.sub.label %></span></button></td>
         <td><%= a.last_shoot || '-' %></td>
         <td>
           <% if (user.id === a.id) { %><span class="muted">current</span><% } else { %>
@@ -33,6 +43,38 @@
 </details>
 
 <% c.accounts.forEach(function (a) { %>
+<dialog id="sub-<%= a.id %>" class="club-dialog">
+  <form method="dialog" class="club-dialog-head"><h2><%= c.name %> &mdash; subscription</h2><button class="btn small secondary" aria-label="Close">Close</button></form>
+  <p class="muted"><%= a.email %></p>
+  <p><span class="badge <%= subCls[a.sub.state] %>"><%= a.sub.label %></span>
+    <% if (a.sub.end) { %> <%= a.sub.state === 'expired' ? 'Ended' : 'Paid until' %> <strong><%= dmy(a.sub.end) %></strong><% } %></p>
+  <% if (a.is_super !== 1) { %>
+  <form method="post" action="/admin/clubs/subscription" class="inline">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <input type="hidden" name="id" value="<%= a.id %>">
+    <select name="action" aria-label="Subscription action">
+      <option value="extend">Dummy payment: extend 12 months</option>
+      <option value="expiring7">Set to expire in 7 days</option>
+      <option value="expire">Expire now</option>
+      <option value="clear">Remove subscription</option>
+      <option value="remind">Send renewal reminder now</option>
+    </select>
+    <button class="btn small">Apply</button>
+  </form>
+  <% } %>
+  <h3>Payments</h3>
+  <% if (!a.payList.length) { %><p class="muted">No payments recorded.</p><% } else { %>
+  <table><thead><tr><th>Date</th><th>Method</th><th>Plan</th><th>Status</th></tr></thead><tbody>
+  <% a.payList.forEach(function (p) { %><tr><td><%= p.created_at %></td><td><%= p.provider %></td><td><%= p.plan %></td><td><%= p.status %></td></tr><% }) %>
+  </tbody></table>
+  <% } %>
+  <h3>Renewal reminders</h3>
+  <% if (!a.reminderList.length) { %><p class="muted">None sent yet.</p><% } else { %>
+  <table><thead><tr><th>Date</th><th>Reminder</th><th>Result</th></tr></thead><tbody>
+  <% a.reminderList.forEach(function (r) { %><tr><td><%= r.created_at %></td><td><%= r.kind %></td><td><%= r.status %></td></tr><% }) %>
+  </tbody></table>
+  <% } %>
+</dialog>
 <dialog id="shoots-<%= a.id %>" class="club-dialog">
   <form method="dialog" class="club-dialog-head"><h2><%= c.name %> &mdash; shoots</h2><button class="btn small secondary" aria-label="Close">Close</button></form>
   <p class="muted"><%= a.email %> &middot; <%= a.shootList.length %> shoot<%= a.shootList.length === 1 ? '' : 's' %></p>

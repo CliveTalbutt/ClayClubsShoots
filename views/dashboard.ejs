@@ -9,11 +9,11 @@
 </section>
 <% } %>
 
-<% if (user.is_super === 1) { %>
-<section class="card">
+<% if (user.is_super === 1 || userRole === 'Admin') { %>
+<section class="card" id="subscription">
   <h2>Subscription</h2>
-  <% const msgs = { ok: ['ok', 'Payment received. Thank you!'], pending: ['warn', 'Payment started. Access will switch on as soon as the provider confirms it.'], failed: ['warn', 'Sorry, that payment could not be started or confirmed. Please try again or use another method.'], cancelled: ['warn', 'Payment cancelled.'] }; %>
-  <% if (payStatus && msgs[payStatus]) { %><p><span class="badge <%= msgs[payStatus][0] %>"><%= msgs[payStatus][1] %></span></p><% } %>
+  <% const msgs = { ok: ['ok', 'Payment received. Thank you!'], pending: ['warn', 'Payment started. Access will switch on as soon as the provider confirms it.'], failed: ['warn', 'Sorry, that payment could not be started or confirmed. Please try again or use another method.'], cancelled: ['warn', 'Payment cancelled.'], requested: ['ok', 'Allowance updated. Pay below to switch it on.'], badsize: ['warn', 'That allowance was not accepted.'], welcome: ['ok', 'Welcome to Clay Shoots! Choose a plan below to start recording shoots.'] }; %>
+  <% if (payStatus && msgs[payStatus]) { %><p><span class="badge <%= msgs[payStatus][0] %>"><%= msgs[payStatus][1] %></span> <%= payMsg || '' %></p><% } %>
   <% if (!payOptions.length) { %>
     <p><span class="badge ok">Active</span> No payment provider is configured, so every account has full access.</p>
   <% } else { %>
@@ -23,6 +23,23 @@
       <h3>Extend or renew</h3>
     <% } else { %>
       <p><span class="badge warn">Inactive</span> Choose a plan to upload and record shoots.</p>
+    <% } %>
+    <% if (allowance.limited) { %>
+    <div class="allowance">
+      <h3>Your allowance</h3>
+      <p>Covers <strong><%= allowance.members %> member<%= allowance.members === 1 ? '' : 's' %></strong> and <strong><%= allowance.guests %> guest<%= allowance.guests === 1 ? '' : 's' %></strong> (<%= allowance.price %> a year). In use: <%= allowance.usedMembers %> members, <%= allowance.usedGuests %> guests.
+        <% if (allowance.usedMembers >= allowance.members || allowance.usedGuests >= allowance.guests) { %><span class="badge warn">At the limit</span><% } %></p>
+      <form method="post" action="/billing/allowance" class="inline">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <label>Members <input type="number" name="members" id="est-members" min="<%= Math.max(1, allowance.usedMembers) %>" max="5000" value="<%= allowance.nextMembers %>" required></label>
+        <label>Guests <input type="number" name="guests" id="est-guests" min="<%= allowance.usedGuests %>" max="5000" value="<%= allowance.nextGuests %>" required></label>
+        <span>= <strong id="est-price">&pound;0.00</strong> a year</span>
+        <button class="btn small secondary">Update allowance</button>
+      </form>
+      <p class="muted">&pound;1 per member, 50p per guest. A bigger allowance is charged pro rata for the rest of this year; a smaller one applies at renewal. It takes effect once paid.</p>
+      <% if (allowance.pending) { %><p><span class="badge warn">Awaiting payment</span> Requested: <%= allowance.nextMembers %> members, <%= allowance.nextGuests %> guests (<%= allowance.nextPrice %> a year).</p><% } %>
+    </div>
+    <script src="/estimate.js" defer></script>
     <% } %>
     <div class="plans">
       <% payOptions.forEach(plan => { %>
@@ -41,6 +58,9 @@
     </div>
   <% } %>
 </section>
+<% } %>
+
+<% if (user.is_super === 1) { %>
 
 <section class="card">
   <h2>API key</h2>

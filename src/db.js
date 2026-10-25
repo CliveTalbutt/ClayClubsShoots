@@ -185,6 +185,9 @@ if (!hadRoster) {
     SELECT user_id, shooter, shooter_key, lower(email), 'member', 'current' FROM shooter_emails`);
   for (const r of db.prepare('SELECT id FROM roster WHERE guid IS NULL').all()) db.prepare('UPDATE roster SET guid = ? WHERE id = ?').run(require('crypto').randomUUID(), r.id);
 }
+for (const col of ['est_members', 'est_guests', 'req_members', 'req_guests']) {
+  if (!db.prepare('SELECT 1 FROM pragma_table_info(\'users\') WHERE name = ?').get(col)) db.exec(`ALTER TABLE users ADD COLUMN ${col} INTEGER`);
+}
 if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'email_results'").get()) {
   db.exec('ALTER TABLE users ADD COLUMN email_results INTEGER NOT NULL DEFAULT 1');
 }

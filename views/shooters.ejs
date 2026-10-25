@@ -17,6 +17,10 @@
 
 <section class="card" id="roster">
   <h2>Membership</h2>
+  <% if (allowance && allowance.limited) { %>
+  <p>Places used: <strong><%= allowance.usedMembers %> of <%= allowance.members %></strong> members, <strong><%= allowance.usedGuests %> of <%= allowance.guests %></strong> guests.
+    <% if (allowance.usedMembers >= allowance.members || allowance.usedGuests >= allowance.guests) { %><span class="badge warn">At the limit</span> <a href="/dashboard#subscription">Increase your allowance</a><% } %></p>
+  <% } %>
   <p class="muted">Registered shooters for this club. The iPhone app lists <span class="tag-member">members</span> and <span class="tag-guest">guests</span> that are current; <span class="tag-expired">expired</span> members are kept for their past shoots but are not offered to the app. Shooters added from the app arrive as guests.</p>
   <form method="post" id="roster-form" action="/shooters/roster/add" class="social-actions roster-form">
     <input type="hidden" name="_csrf" value="<%= csrf %>">

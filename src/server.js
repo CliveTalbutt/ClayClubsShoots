@@ -58,7 +58,7 @@ const decodeId = (userId, token) => {
 const hashKey = (k) => crypto.createHash('sha256').update(k).digest('hex');
 // With no payment provider configured there is nothing to subscribe to, so every account is active.
 const isActive = (u) =>
-  u && (!payments.anyEnabled() || ['active', 'trialing'].includes(u.sub_status) && (u.sub_period_end || 0) * 1000 > Date.now());
+  u && (u.is_super === 1 || !payments.anyEnabled() || ['active', 'trialing'].includes(u.sub_status) && (u.sub_period_end || 0) * 1000 > Date.now());
 const regenerate = (req) => new Promise((res, rej) => req.session.regenerate((e) => (e ? rej(e) : res())));
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -86,6 +86,9 @@ const mailer = require('./mailer')({ db, classify: (s) => classify(s), needAuth:
 const roster = require('./roster')({ db, needAuth: (q, r, n) => needAuth(q, r, n), mailer, baseUrl: BASE_URL, wrap });
 const backup = require('./backup')({ db, dir: path.join(__dirname, '..', 'data', 'backups') });
 if (process.env.DB_IN_MEMORY !== '1') backup.schedule();
+const allowanceLib = require('./allowance');
+const reminders = require('./reminders')({ db, mailer, baseUrl: BASE_URL });
+reminders.schedule();
 const social = require('./social')({ db, encrypt, decrypt, needAuth: (q, r, n) => needAuth(q, r, n), wrap });
 
 // ---- JSON API for the iPhone app (bearer key, no cookies/CSRF) ----
@@ -251,14 +254,18 @@ app.post('/register', authLimiter, wrap(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const club = String(req.body.club_name || '').trim();
   const pw = String(req.body.password || '');
+  const estMembers = allowanceLib.parseCount(req.body.est_members, { min: 1 });
+  const estGuests = allowanceLib.parseCount(req.body.est_guests);
   let error = null;
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200) error = 'Enter a valid email.';
   else if (!club || club.length > 120) error = 'Enter your club or organiser name.';
   else if (pw.length < 12 || pw.length > 128) error = 'Password must be 12-128 characters.';
+  else if (estMembers == null) error = 'Enter how many members your club expects (at least 1).';
+  else if (estGuests == null) error = 'Enter how many guests you expect (0 or more).';
   else if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) error = 'Could not create account with those details.';
-  if (error) return res.status(400).render('register', { error });
+  if (error) return res.status(400).render('register', { error, form: req.body });
   const hash = await bcrypt.hash(pw, 12);
-  const r = db.prepare('INSERT INTO users (email, club_name, password_hash) VALUES (?,?,?)').run(email, club, hash);
+  const r = db.prepare('INSERT INTO users (email, club_name, password_hash, est_members, est_guests) VALUES (?,?,?,?,?)').run(email, club, hash, estMembers, estGuests);
   await regenerate(req);
   req.session.pending = { userId: r.lastInsertRowid, setup: true };
   res.redirect('/2fa/setup');
@@ -296,7 +303,8 @@ app.post('/2fa/setup', authLimiter, wrap(async (req, res) => {
   db.prepare('UPDATE users SET totp_secret = ? WHERE id = ?').run(encrypt(req.session.tempSecret), p.userId);
   await regenerate(req);
   req.session.userId = p.userId;
-  res.redirect('/dashboard');
+  const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(p.userId);
+  res.redirect(isActive(fresh) ? '/dashboard' : '/dashboard?pay=welcome');
 }));
 
 app.get('/2fa/verify', (req, res) => (req.session.pending && !req.session.pending.setup ? res.render('2fa-verify') : res.redirect('/login')));
@@ -332,8 +340,20 @@ app.get('/account', needAuth, (req, res) => {
 
 const needRealSuper = (req, res, next) => (res.locals.realSuper ? next() : res.status(404).send('Not found'));
 
+const SOON_DAYS = 30;
+function subInfo(u) {
+  if (u.is_super === 1) return { state: 'ok', label: 'Super admin', note: 'Always active', end: null };
+  const end = u.sub_period_end || 0;
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (!end || !['active', 'trialing'].includes(u.sub_status)) {
+    return end && end <= nowSec ? { state: 'expired', label: 'Expired', end } : { state: 'none', label: 'No subscription', end: null };
+  }
+  if (end <= nowSec) return { state: 'expired', label: 'Expired', end };
+  const days = Math.ceil((end - nowSec) / 86400);
+  return days <= SOON_DAYS ? { state: 'soon', label: `Ends in ${days}d`, end, days } : { state: 'ok', label: 'Active', end, days };
+}
 app.get('/admin/clubs', needAuth, needRealSuper, (req, res) => {
-  const accounts = db.prepare(`SELECT u.id, u.email, u.is_super,
+  const accounts = db.prepare(`SELECT u.id, u.email, u.is_super, u.sub_status, u.sub_period_end,
       (SELECT COUNT(*) FROM shoots s WHERE s.user_id = u.id) AS shoots,
       (SELECT MAX(shoot_date) FROM shoots s WHERE s.user_id = u.id) AS last_shoot,
       (SELECT COUNT(*) FROM roster r WHERE r.user_id = u.id AND r.status = 'current') AS people,
@@ -353,9 +373,17 @@ app.get('/admin/clubs', needAuth, needRealSuper, (req, res) => {
       (SELECT status FROM roster r WHERE r.user_id = s.user_id AND r.name_key = lower(trim(x.shooter)) LIMIT 1) AS status
     FROM results x JOIN shoots s ON s.id = x.shoot_id WHERE s.user_id = ? GROUP BY x.shooter ORDER BY total DESC, x.shooter`);
   for (const c of clubs.values()) {
-    for (const a of c.accounts) { a.shootList = shootsOf.all(a.id); a.shooterList = shootersOf.all(a.id); }
+    for (const a of c.accounts) {
+      a.shootList = shootsOf.all(a.id); a.shooterList = shootersOf.all(a.id);
+      a.sub = subInfo(a);
+      a.payList = db.prepare("SELECT provider, plan, status, created_at FROM payments WHERE user_id = ? ORDER BY id DESC LIMIT 8").all(a.id);
+      a.reminderList = reminders.recent(a.id, 8);
+    }
+    const order = { ok: 0, soon: 1, none: 2, expired: 3 };
+    const nonSuper = c.accounts.filter((a) => a.is_super !== 1);
+    c.sub = (nonSuper.length ? nonSuper : c.accounts).map((a) => a.sub).sort((x, y) => order[x.state] - order[y.state])[0];
   }
-  res.render('clubs', { clubs: [...clubs.values()] });
+  res.render('clubs', { clubs: [...clubs.values()], note: req.query.note ? String(req.query.note).slice(0, 200) : null });
 });
 app.post('/admin/clubs/open', needAuth, needRealSuper, (req, res) => {
   const id = Number(req.body.id);
@@ -365,6 +393,31 @@ app.post('/admin/clubs/open', needAuth, needRealSuper, (req, res) => {
   req.session.userId = target.id;
   res.redirect('/dashboard');
 });
+app.post('/admin/clubs/subscription', needAuth, needRealSuper, wrap(async (req, res) => {
+  const id = Number(req.body.id);
+  const u = Number.isInteger(id) && db.prepare('SELECT * FROM users WHERE id = ? AND is_super = 0').get(id);
+  if (!u) return res.redirect('/admin/clubs');
+  const nowSec = Math.floor(Date.now() / 1000);
+  const action = String(req.body.action || '');
+  const set = (status, end) => db.prepare('UPDATE users SET sub_status = ?, sub_period_end = ? WHERE id = ?').run(status, end, u.id);
+  if (action === 'extend') {
+    const base = new Date(Math.max(nowSec, u.sub_status === 'active' ? u.sub_period_end || 0 : 0) * 1000);
+    base.setMonth(base.getMonth() + 12);
+    set('active', Math.floor(base.getTime() / 1000));
+    db.prepare("INSERT INTO payments (user_id, provider, plan, provider_ref, status) VALUES (?, 'admin', 'annual', ?, 'paid')").run(u.id, `admin_${crypto.randomUUID()}`);
+  } else if (action === 'expiring7') set('active', nowSec + 7 * 86400);
+  else if (action === 'expire') set('active', nowSec - 86400);
+  else if (action === 'clear') set('none', null);
+  else if (action === 'remind') {
+    const r = await reminders.sendNow(u.id);
+    return res.redirect('/admin/clubs?note=' + encodeURIComponent(`Reminder to ${u.email}: ${r}`));
+  }
+  res.redirect('/admin/clubs?note=' + encodeURIComponent(`Subscription updated for ${u.email}.`));
+}));
+app.post('/admin/reminders/run', needAuth, needRealSuper, wrap(async (req, res) => {
+  const n = await reminders.sweep();
+  res.redirect('/admin/clubs?note=' + encodeURIComponent(`Reminder check complete: ${n} sent.`));
+}));
 app.post('/admin/return', needAuth, (req, res) => {
   if (req.session.superId && res.locals.realSuper) { req.session.userId = req.session.superId; delete req.session.superId; }
   res.redirect('/admin/clubs');
@@ -413,7 +466,7 @@ app.get('/dashboard', needAuth, (req, res) => {
     FROM shoots s LEFT JOIN results r ON r.shoot_id = s.id
     WHERE s.user_id = ? GROUP BY s.id ORDER BY s.shoot_date DESC, s.shoot_time DESC, s.id DESC`).all(req.session.userId);
   const newKey = req.session.newKey; delete req.session.newKey;
-  res.render('dashboard', { shoots, newKey, baseUrl: BASE_URL, payOptions: payments.options(), payStatus: req.query.pay || null, hasPortal: payments.hasStripePortal && !!res.locals.user.stripe_customer_id });
+  res.render('dashboard', { shoots, newKey, baseUrl: BASE_URL, payOptions: payments.options(res.locals.user), allowance: payments.allowanceInfo(res.locals.user), payMsg: req.query.msg ? String(req.query.msg).slice(0, 300) : null, payStatus: req.query.pay || null, hasPortal: payments.hasStripePortal && !!res.locals.user.stripe_customer_id });
 });
 
 // Minimum average % per class, highest first. Classified on the last 12 months, else all time.
@@ -589,7 +642,7 @@ app.get('/verify-email/:token', rateLimit({ windowMs: 15 * 60_000, limit: 30, st
   res.status(r ? 200 : 400).render('verify', { ok: !!r, name: r ? r.name : null, club: r ? db.prepare('SELECT club_name FROM users WHERE id = ?').get(r.user_id)?.club_name : null });
 });
 app.use('/shooters/roster', roster.router);
-app.use('/shooters', needAuth, (req, res, next) => { res.locals.roster = roster.listAll(req.session.userId); next(); }, mailer.router);
+app.use('/shooters', needAuth, (req, res, next) => { res.locals.roster = roster.listAll(req.session.userId); res.locals.allowance = payments.allowanceInfo(res.locals.user); next(); }, mailer.router);
 
 app.use((err, req, res, next) => {
   console.error(err);

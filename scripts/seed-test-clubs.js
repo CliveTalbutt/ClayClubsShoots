@@ -92,5 +92,25 @@ db.transaction(() => {
   }
 })();
 
+// Dummy subscriptions, one scenario per club, applied to every account of that club.
+const nowSec = Math.floor(Date.now() / 1000);
+const scenarios = {
+  'Ashdown Clay Club': ['active', nowSec + 200 * 86400, 'active, 200 days left'],
+  'Brookfield Shooting School': ['active', nowSec + 6 * 86400, 'ends in 6 days (renewal reminder due)'],
+  'Coppice Gun Club': ['active', nowSec - 3 * 86400, 'expired 3 days ago'],
+  'Downland Sporting': ['none', null, 'no subscription (new sign-up, pay with the dummy card)'],
+};
+for (const [club, [status, end]] of Object.entries(scenarios)) {
+  db.prepare('UPDATE users SET sub_status = ?, sub_period_end = ? WHERE club_name = ? AND is_super = 0').run(status, end, club);
+}
+// Paid-for allowance (members, guests). Brookfield is exactly full so the limit can be tried.
+const allowances = { 'Ashdown Clay Club': [12, 6], 'Brookfield Shooting School': [6, 2], 'Coppice Gun Club': [8, 4], 'Downland Sporting': [10, 4] };
+for (const [club, [m, g]] of Object.entries(allowances)) {
+  db.prepare('UPDATE users SET est_members = ?, est_guests = ?, req_members = NULL, req_guests = NULL WHERE club_name = ? AND is_super = 0').run(m, g, club);
+}
+console.log('Subscriptions:');
+for (const [club, [, , text]] of Object.entries(scenarios)) console.log(`  ${club}: ${text}; allowance ${allowances[club][0]} members, ${allowances[club][1]} guests`);
+console.log();
+
 console.log(`Password for every account: ${PASSWORD}\n`);
 for (const r of report) console.log(`${r.club.padEnd(28)} ${r.role.padEnd(22)} ${r.name.padEnd(18)} ${r.email}${r.note ? '  (' + r.note + ')' : ''}`);

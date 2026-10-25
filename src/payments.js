@@ -11,10 +11,12 @@ const CURRENCY = (process.env.CURRENCY || 'GBP').toUpperCase();
 const SYMBOLS = { GBP: '£', EUR: '€', USD: '$' };
 const GRACE = 3 * 86400;
 
+// Prices are per head (see allowance.js), so the amount is worked out for each club by planFor().
 const PLANS = {
-  monthly: { key: 'monthly', label: 'Monthly', pence: Number(process.env.PRICE_MONTHLY_PENCE) || 500, months: 1, recurring: true, blurb: 'per month, cancel any time' },
-  annual: { key: 'annual', label: 'Annual pass', pence: Number(process.env.PRICE_ANNUAL_PENCE) || 5000, months: 12, recurring: false, blurb: 'one payment, 12 months of access' },
+  annual: { key: 'annual', label: 'Annual subscription', pence: 0, months: 12, recurring: false, blurb: 'one payment, 12 months of access' },
+  topup: { key: 'topup', label: 'Add shooters', pence: 0, months: 0, recurring: false, blurb: 'one payment for the rest of this subscription year' },
 };
+const allowanceLib = require('./allowance');
 const amount = (plan) => (plan.pence / 100).toFixed(2);
 const priceText = (plan) => `${SYMBOLS[CURRENCY] || CURRENCY + ' '}${amount(plan)}`;
 
@@ -44,6 +46,27 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
   const now = () => Math.floor(Date.now() / 1000);
   const addMonths = (sec, m) => { const d = new Date(sec * 1000); d.setMonth(d.getMonth() + m); return Math.floor(d.getTime() / 1000); };
   const userById = (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  const allowance = allowanceLib(db);
+  const sizeOf = (u) => {
+    const c = allowance.counts(u.id);
+    const cur = u.est_members != null ? { m: u.est_members, g: u.est_guests } : { m: Math.max(1, c.members), g: c.guests };
+    const next = u.req_members != null ? { m: u.req_members, g: u.req_guests } : cur;
+    return { cur, next };
+  };
+  // The plan with this club's amount filled in.
+  function planFor(user, key) {
+    const base = PLANS[key];
+    if (!base) return null;
+    const { cur, next } = sizeOf(user);
+    let pence;
+    let blurb = `${next.m} member${next.m === 1 ? '' : 's'} + ${next.g} guest${next.g === 1 ? '' : 's'} for 12 months`;
+    if (key === 'topup') {
+      const left = Math.max(0, (user.sub_period_end || 0) - now());
+      pence = Math.max(50, Math.ceil(Math.max(0, allowanceLib.price(next.m, next.g) - allowanceLib.price(cur.m, cur.g)) * left / (365 * 86400)));
+      blurb = `${next.m} members + ${next.g} guests, charged for the rest of this year`;
+    } else pence = allowanceLib.price(next.m, next.g);
+    return { ...base, pence, blurb };
+  }
   const hook = (name) => (/^https:\/\//.test(baseUrl) ? `${baseUrl}/webhook/${name}` : undefined);
   const returnUrl = (name) => `${baseUrl}/billing/return/${name}`;
 
@@ -67,6 +90,7 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
   // One-off pass: extends from the later of now and the current expiry.
   function activatePass(provider, ref, userId, planKey) {
     if (!PLANS[planKey] || !markPaid(provider, ref, userId, planKey)) return;
+    allowance.applyRequested(userId);
     const base = Math.max(now(), currentEnd(userById(userId)));
     grantUntil(userId, addMonths(base, PLANS[planKey].months));
   }
@@ -74,6 +98,7 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
   function activateRecurring(provider, ref, userId, planKey, paidAt) {
     if (!PLANS[planKey]) return;
     markPaid(provider, ref, userId, planKey);
+    allowance.applyRequested(userId);
     grantUntil(userId, addMonths(paidAt, PLANS[planKey].months) + GRACE);
   }
   const addPending = (provider, ref, userId, plan, meta) =>
@@ -100,10 +125,10 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
     else if (s.mode === 'payment') activatePass('stripe', s.payment_intent || s.id, Number(s.metadata.user_id), s.metadata.plan);
   }
   const stripeProvider = {
-    id: 'stripe', name: 'Card, Apple Pay & Google Pay', plans: ['monthly', 'annual'],
+    id: 'stripe', name: 'Card, Apple Pay & Google Pay', plans: ['annual', 'topup'],
     enabled: () => !!stripe,
     async start(user, planKey) {
-      const plan = PLANS[planKey];
+      const plan = planFor(user, planKey);
       let customer = user.stripe_customer_id;
       if (!customer) {
         customer = (await stripe.customers.create({ email: user.email, name: user.club_name, metadata: { user_id: String(user.id) } })).id;
@@ -161,10 +186,10 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
   }
   const paypalProvider = {
     id: 'paypal', name: 'PayPal',
-    get plans() { return process.env.PAYPAL_PLAN_ID ? ['monthly', 'annual'] : ['annual']; },
+    get plans() { return process.env.PAYPAL_PLAN_ID ? ['annual', 'topup'] : ['annual']; },
     enabled: () => !!(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET),
     async start(user, planKey) {
-      const plan = PLANS[planKey];
+      const plan = planFor(user, planKey);
       const urls = { return_url: returnUrl('paypal'), cancel_url: `${baseUrl}/dashboard?pay=cancelled` };
       if (plan.recurring) {
         const sub = await paypal('POST', '/v1/billing/subscriptions', {
@@ -230,7 +255,7 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
     else activatePass('gocardless', id, userId, planKey);
   }
   const gocardlessProvider = {
-    id: 'gocardless', name: 'Direct Debit (GoCardless)', plans: ['monthly', 'annual'],
+    id: 'gocardless', name: 'Direct Debit (GoCardless)', plans: ['annual', 'topup'],
     enabled: () => !!process.env.GOCARDLESS_ACCESS_TOKEN,
     async start(user, planKey) {
       const sessionToken = crypto.randomBytes(16).toString('hex');
@@ -248,7 +273,7 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
       if (row.status === 'paid') return;
       const { redirect_flows: flow } = await gc('POST', `/redirect_flows/${encodeURIComponent(id)}/actions/complete`, { data: { session_token: row.meta.sessionToken } });
       const mandate = flow.links.mandate;
-      const plan = PLANS[row.plan];
+      const plan = planFor(user, row.plan);
       const metadata = { user_id: String(user.id), plan: row.plan };
       if (plan.recurring) {
         const { subscriptions: sub } = await gc('POST', '/subscriptions', { subscriptions: {
@@ -285,10 +310,10 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
     if (order?.state === 'COMPLETED') activatePass('square', orderId, userId, planKey);
   }
   const squareProvider = {
-    id: 'square', name: 'Square', plans: ['annual'],
+    id: 'square', name: 'Square', plans: ['annual', 'topup'],
     enabled: () => !!(process.env.SQUARE_ACCESS_TOKEN && process.env.SQUARE_LOCATION_ID),
     async start(user, planKey) {
-      const plan = PLANS[planKey];
+      const plan = planFor(user, planKey);
       const { payment_link: link } = await square('POST', '/v2/online-checkout/payment-links', {
         idempotency_key: crypto.randomUUID(),
         quick_pay: { name: `Clay Shoots – ${plan.label}`, price_money: { amount: plan.pence, currency: CURRENCY }, location_id: process.env.SQUARE_LOCATION_ID },
@@ -338,10 +363,10 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
     }
   }
   const mollieProvider = {
-    id: 'mollie', name: 'Mollie (iDEAL, Bancontact, SEPA & more)', plans: ['monthly', 'annual'],
+    id: 'mollie', name: 'Mollie (iDEAL, Bancontact, SEPA & more)', plans: ['annual', 'topup'],
     enabled: () => !!process.env.MOLLIE_API_KEY,
     async start(user, planKey) {
-      const plan = PLANS[planKey];
+      const plan = planFor(user, planKey);
       let customerId;
       if (plan.recurring) {
         customerId = userLink('mollie', 'customer', user.id)?.external_id;
@@ -372,14 +397,46 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
     },
   };
 
-  const providers = Object.fromEntries([stripeProvider, paypalProvider, gocardlessProvider, squareProvider, mollieProvider].map((p) => [p.id, p]));
+  // ---- Dummy provider: a fake card checkout for development and demos. Never enabled in production. ----
+  const dummyProvider = {
+    id: 'dummy', name: 'test card (dummy payment)', plans: ['annual', 'topup'],
+    enabled: () => process.env.PAYMENTS_DUMMY === '1' && process.env.NODE_ENV !== 'production',
+    async start(user, planKey) { return `${baseUrl}/billing/dummy/checkout?plan=${encodeURIComponent(planKey)}`; },
+    async complete() {},
+    async webhook() { return 200; },
+  };
+
+  const providers = Object.fromEntries([dummyProvider, stripeProvider, paypalProvider, gocardlessProvider, squareProvider, mollieProvider].map((p) => [p.id, p]));
   const enabledProviders = () => Object.values(providers).filter((p) => p.enabled());
 
   // Which providers can take each plan, for the dashboard.
-  const options = () => Object.values(PLANS).map((plan) => ({
-    key: plan.key, label: plan.label, price: priceText(plan), blurb: plan.blurb,
-    providers: enabledProviders().filter((p) => p.plans.includes(plan.key)).map((p) => ({ id: p.id, name: p.name })),
-  })).filter((o) => o.providers.length);
+  // True when a mid-year top-up applies: an active subscription with a larger requested allowance.
+  const topupApplies = (u) => {
+    if (!u || u.is_super === 1 || !(u.sub_period_end > now()) || u.sub_status !== 'active') return false;
+    const { cur, next } = sizeOf(u);
+    return allowanceLib.price(next.m, next.g) > allowanceLib.price(cur.m, cur.g);
+  };
+  const eligible = (u, key) => key === 'annual' || (key === 'topup' && topupApplies(u));
+
+  // Which providers can take each plan for this club, for the dashboard.
+  const options = (user) => Object.keys(PLANS).filter((k) => eligible(user, k)).map((k) => {
+    const plan = planFor(user, k);
+    return {
+      key: plan.key, label: plan.label, price: priceText(plan), blurb: plan.blurb,
+      providers: enabledProviders().filter((p) => p.plans.includes(plan.key)).map((p) => ({ id: p.id, name: p.name })),
+    };
+  }).filter((o) => o.providers.length);
+
+  // Current and requested allowance with prices, for the dashboard.
+  const allowanceInfo = (user) => {
+    const { cur, next } = sizeOf(user);
+    const c = allowance.counts(user.id);
+    return {
+      limited: allowance.get(user.id).limited, members: cur.m, guests: cur.g, usedMembers: c.members, usedGuests: c.guests,
+      nextMembers: next.m, nextGuests: next.g, pending: user.req_members != null,
+      price: allowanceLib.money(allowanceLib.price(cur.m, cur.g)), nextPrice: allowanceLib.money(allowanceLib.price(next.m, next.g)),
+    };
+  };
 
   // ---- routes ----
   const webhooks = express.Router();
@@ -393,7 +450,8 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
   billing.post('/pay/:provider', needAuth, wrap(async (req, res) => {
     const p = providers[req.params.provider];
     const planKey = String(req.body.plan || '');
-    if (!p?.enabled() || !p.plans.includes(planKey)) return res.status(400).send('Unsupported payment option');
+    if (res.locals.userRole === 'Member') return res.status(403).send('Only a club admin can manage the subscription');
+    if (!p?.enabled() || !p.plans.includes(planKey) || !eligible(res.locals.user, planKey)) return res.status(400).send('Unsupported payment option');
     try {
       const url = await p.start(res.locals.user, planKey);
       if (!/^https?:\/\//.test(url || '')) throw new Error('No checkout URL returned');
@@ -415,6 +473,29 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
       res.redirect('/dashboard?pay=failed');
     }
   }));
+  billing.get('/dummy/checkout', needAuth, (req, res) => {
+    const plan = dummyProvider.enabled() && eligible(res.locals.user, String(req.query.plan || '')) ? planFor(res.locals.user, String(req.query.plan)) : null;
+    if (!plan) return res.status(404).send('Not found');
+    res.render('dummy-checkout', { plan, price: priceText(plan) });
+  });
+  billing.post('/dummy/confirm', needAuth, wrap(async (req, res) => {
+    const plan = dummyProvider.enabled() && eligible(res.locals.user, String(req.body.plan || '')) ? planFor(res.locals.user, String(req.body.plan)) : null;
+    if (!plan || res.locals.userRole === 'Member') return res.status(404).send('Not found');
+    if (req.body.outcome !== 'pay') return res.redirect('/dashboard?pay=cancelled');
+    const ref = `dummy_${crypto.randomUUID()}`;
+    const uid = res.locals.user.id;
+    if (plan.recurring) activateRecurring('dummy', ref, uid, plan.key, now());
+    else activatePass('dummy', ref, uid, plan.key);
+    res.redirect('/dashboard?pay=ok');
+  }));
+  billing.post('/allowance', needAuth, (req, res) => {
+    if (res.locals.userRole === 'Member') return res.status(403).send('Only a club admin can manage the subscription');
+    const m = allowanceLib.parseCount(req.body.members, { min: 1 });
+    const g = allowanceLib.parseCount(req.body.guests);
+    if (m == null || g == null) return res.redirect('/dashboard?pay=badsize#subscription');
+    const err = allowance.request(res.locals.user.id, m, g);
+    res.redirect(err ? `/dashboard?pay=badsize&msg=${encodeURIComponent(err)}#subscription` : '/dashboard?pay=requested#subscription');
+  });
   billing.post('/portal', needAuth, wrap(async (req, res) => {
     const u = res.locals.user;
     if (!stripe || !u.stripe_customer_id) return res.redirect('/dashboard');
@@ -422,5 +503,5 @@ module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
     res.redirect(303, s.url);
   }));
 
-  return { providers, enabledProviders, anyEnabled: () => enabledProviders().length > 0, options, webhooks, billing, PLANS, hasStripePortal: !!stripe };
+  return { providers, enabledProviders, anyEnabled: () => enabledProviders().length > 0, options, allowanceInfo, webhooks, billing, PLANS, hasStripePortal: !!stripe };
 };
