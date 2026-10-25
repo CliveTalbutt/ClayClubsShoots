@@ -167,6 +167,14 @@ struct ContentView: View {
     /// and a dropdown for the number of stands in the shoot.
     @ToolbarContentBuilder
     private var controlPanel: some ToolbarContent {
+        // Its own item, so it stays visible on the bar instead of folding into the "…" menu.
+        if !vm.isManualMode {
+            ToolbarItem(placement: .topBarTrailing) {
+                listenButton
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+
         ToolbarItemGroup {
             rosterButton
             addShootersButton
@@ -228,9 +236,6 @@ struct ContentView: View {
                 isShowingHelp = true
             } label: {
                 Label("Voice Commands", systemImage: "questionmark.circle")
-            }
-            if !vm.isManualMode {
-                listenButton
             }
         }
     }
