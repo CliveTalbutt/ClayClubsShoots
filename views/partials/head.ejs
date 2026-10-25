@@ -18,9 +18,13 @@
           <a href="/leaderboard">Leaderboard</a>
         </div>
       </div>
-      <a href="/shooters">Shooters</a>
       <a href="/social">Social</a>
-      <a href="/account" class="nav-account" title="Signed in as <%= user.email %>">Account</a>
+      <div class="nav-menu nav-menu-right">
+        <a href="/account" class="nav-account" title="Signed in as <%= user.email %>">Account &#9662;</a>
+        <div class="nav-sub">
+          <a href="/shooters">Shooters</a>
+        </div>
+      </div>
     <% } else { %>
       <a href="/login">Sign in</a>
       <a class="btn small" href="/register">Create account</a>
