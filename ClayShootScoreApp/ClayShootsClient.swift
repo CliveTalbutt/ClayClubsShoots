@@ -4,6 +4,7 @@
 //  Sends finished shoots to the Clay Shoots web app through its JSON API.
 //
 
+import CryptoKit
 import Foundation
 import Security
 
@@ -54,6 +55,7 @@ nonisolated enum ClayShootsError: LocalizedError {
     case validation([String])
     case server(Int)
     case network(String)
+    case untrustedServer(String)
     case nothingToSend
 
     var errorDescription: String? {
@@ -65,6 +67,7 @@ nonisolated enum ClayShootsError: LocalizedError {
         case .validation(let details): "The server rejected the results: " + details.joined(separator: "; ")
         case .server(let code): "The server returned an error (\(code))."
         case .network(let message): "Could not reach the server: \(message)"
+        case .untrustedServer(let message): message
         case .nothingToSend: "Add at least one shooter before sending."
         }
     }
@@ -73,16 +76,22 @@ nonisolated enum ClayShootsError: LocalizedError {
 nonisolated struct ClayShootsClient: Sendable {
     let baseURL: URL
     let apiKey: String
+    /// SHA-256 (hex) of the server's public key. When set, only a server holding that key is trusted.
+    var pinnedFingerprint: String = ""
 
-    /// Turns what the user typed into a base URL, adding http:// when it is missing.
+    /// Turns what the user typed into a base URL. Only encrypted connections are used:
+    /// a missing scheme or `http://` becomes `https://`.
     static func normalisedURL(_ text: String) -> URL? {
         var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
         guard !trimmed.isEmpty else { return nil }
-        if !trimmed.lowercased().hasPrefix("http://") && !trimmed.lowercased().hasPrefix("https://") {
-            trimmed = "http://" + trimmed
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("http://") {
+            trimmed = "https://" + trimmed.dropFirst("http://".count)
+        } else if !lower.hasPrefix("https://") {
+            trimmed = "https://" + trimmed
         }
-        guard let url = URL(string: trimmed), url.host() != nil else { return nil }
+        guard let url = URL(string: trimmed), url.scheme == "https", url.host() != nil else { return nil }
         return url
     }
 
@@ -144,13 +153,28 @@ nonisolated struct ClayShootsClient: Sendable {
     }
 
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        guard request.url?.scheme == "https" else {
+            throw ClayShootsError.untrustedServer("Refusing to send over an unencrypted connection.")
+        }
+        let pinned = PinnedSession.shared(for: pinnedFingerprint)
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await pinned.session.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw ClayShootsError.server(0) }
             return (data, http)
         } catch let error as ClayShootsError {
             throw error
         } catch {
+            if pinned.takePinFailure() {
+                throw ClayShootsError.untrustedServer("The server's identity does not match the fingerprint in Server Settings. Nothing was sent.")
+            }
+            if let urlError = error as? URLError {
+                switch urlError.code {
+                case .serverCertificateUntrusted, .serverCertificateHasUnknownRoot, .serverCertificateHasBadDate,
+                     .serverCertificateNotYetValid, .secureConnectionFailed, .clientCertificateRejected:
+                    throw ClayShootsError.untrustedServer("The server's certificate is not trusted. If it is self-signed, enter its key fingerprint in Server Settings. Nothing was sent.")
+                default: break
+                }
+            }
             throw ClayShootsError.network(error.localizedDescription)
         }
     }
@@ -172,6 +196,7 @@ nonisolated struct ClayShootsClient: Sendable {
 @Observable
 final class ClayShootsSettings {
     private static let urlKey = "clayShootsServerURL"
+    private static let pinKey = "clayShootsServerPin"
     private static let keychainService = "ClayShootsAPIKey"
 
     var serverURL: String {
@@ -182,7 +207,13 @@ final class ClayShootsSettings {
         didSet { Self.storeKey(apiKey) }
     }
 
+    /// Fingerprint of the server's key, shown by the server when it starts. Not secret.
+    var pinnedFingerprint: String {
+        didSet { UserDefaults.standard.set(pinnedFingerprint, forKey: Self.pinKey) }
+    }
+
     init() {
+        pinnedFingerprint = UserDefaults.standard.string(forKey: Self.pinKey) ?? ""
         serverURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""
         apiKey = Self.loadKey()
         importPendingConfig()
@@ -195,16 +226,17 @@ final class ClayShootsSettings {
         let file = dir.appending(path: "clayshoots-config.json")
         guard let data = try? Data(contentsOf: file) else { return }
         defer { try? FileManager.default.removeItem(at: file) }
-        struct Config: Decodable { let serverURL: String; let apiKey: String }
+        struct Config: Decodable { let serverURL: String; let apiKey: String; let fingerprint: String? }
         guard let config = try? JSONDecoder().decode(Config.self, from: data) else { return }
         serverURL = config.serverURL
         apiKey = config.apiKey
+        if let fingerprint = config.fingerprint { pinnedFingerprint = fingerprint }
     }
 
     var client: ClayShootsClient? {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty, let url = ClayShootsClient.normalisedURL(serverURL) else { return nil }
-        return ClayShootsClient(baseURL: url, apiKey: key)
+        return ClayShootsClient(baseURL: url, apiKey: key, pinnedFingerprint: pinnedFingerprint)
     }
 
     private static var query: [String: Any] {
@@ -300,5 +332,94 @@ enum UploadOutbox {
     static func save(id: String, body: Data) { all[id] = body }
     static func clear(id: String, ifBody body: Data) {
         if all[id] == body { all[id] = nil }
+    }
+}
+
+
+/// One URLSession per pin value. It never stores cookies, caches or credentials, accepts TLS 1.2 or
+/// later only, refuses redirects, and, when a fingerprint is set, trusts only a server whose public
+/// key hashes to it (so a self-signed server is safe and an impostor is rejected).
+nonisolated final class PinnedSession: NSObject, URLSessionDelegate, URLSessionTaskDelegate, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var cache: [String: PinnedSession] = [:]
+
+    static func normalised(_ text: String) -> String {
+        text.lowercased().filter { $0.isHexDigit }
+    }
+
+    static func shared(for fingerprint: String) -> PinnedSession {
+        let pin = normalised(fingerprint)
+        lock.lock(); defer { lock.unlock() }
+        if let existing = cache[pin] { return existing }
+        let made = PinnedSession(pin: pin)
+        cache[pin] = made
+        return made
+    }
+
+    private let pin: String
+    private let stateLock = NSLock()
+    private var pinFailed = false
+    private(set) var session: URLSession!
+
+    private init(pin: String) {
+        self.pin = pin
+        super.init()
+        let config = URLSessionConfiguration.ephemeral
+        config.tlsMinimumSupportedProtocolVersion = .TLSv12
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCredentialStorage = nil
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }
+
+    func takePinFailure() -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        let failed = pinFailed
+        pinFailed = false
+        return failed
+    }
+
+    private func markFailure() {
+        stateLock.lock(); pinFailed = true; stateLock.unlock()
+    }
+
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = challenge.protectionSpace.serverTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        // No pin: the certificate must chain to a trusted authority and match the host name.
+        guard !pin.isEmpty else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        if let leaf = (SecTrustCopyCertificateChain(trust) as? [SecCertificate])?.first,
+           let key = SecCertificateCopyKey(leaf),
+           let raw = SecKeyCopyExternalRepresentation(key, nil) as Data?,
+           Self.constantTimeEqual(Self.hex(SHA256.hash(data: raw)), pin) {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        } else {
+            markFailure()
+            completionHandler(.cancelAuthenticationChallenge, nil)
+        }
+    }
+
+    // An authenticated request is never followed to another address.
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+
+    private static func hex(_ digest: SHA256.Digest) -> String {
+        digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func constantTimeEqual(_ a: String, _ b: String) -> Bool {
+        let x = Array(a.utf8), y = Array(b.utf8)
+        guard x.count == y.count else { return false }
+        return zip(x, y).reduce(0) { $0 | ($1.0 ^ $1.1) } == 0
     }
 }

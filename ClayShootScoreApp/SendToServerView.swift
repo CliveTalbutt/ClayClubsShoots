@@ -19,7 +19,7 @@ struct SendToServerView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("http://Clives-MacBook-Pro.local:3000", text: $settings.serverURL)
+                    TextField("https://Clives-MacBook-Pro.local:3000", text: $settings.serverURL)
                         .autocorrectionDisabled()
                         #if os(iOS)
                         .textInputAutocapitalization(.never)
@@ -30,10 +30,16 @@ struct SendToServerView: View {
                         #if os(iOS)
                         .textInputAutocapitalization(.never)
                         #endif
+                    TextField("Server key fingerprint (self-signed servers)", text: $settings.pinnedFingerprint)
+                        .autocorrectionDisabled()
+                        .font(.footnote.monospaced())
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
                 } header: {
                     Text("Clay Shoots server")
                 } footer: {
-                    Text("Create the key on the website's Dashboard under API key.")
+                    Text("Only encrypted (https) connections are used. Create the key on the website's Dashboard under API key. If the server uses its own certificate, paste the fingerprint it prints when it starts: the app then trusts only that server and refuses any impostor.")
                 }
 
                 Section {
