@@ -434,9 +434,13 @@ struct ScoreTableView: View {
         default: next = 1       // not shot -> tick
         }
         guard !vm.isStandLocked(stand) else { return }
-        // Entering a score in another box moves the expanded input there.
-        if vm.currentShooterIndex != shooterIndex { vm.currentShooterIndex = shooterIndex }
-        if vm.currentStand != stand { vm.currentStand = stand }
+        // A tap on a collapsed box only moves the expanded input there; once it is
+        // magnified, taps change scores as normal.
+        if vm.currentShooterIndex != shooterIndex || vm.currentStand != stand || vm.isComplete {
+            if vm.currentShooterIndex != shooterIndex { vm.currentShooterIndex = shooterIndex }
+            if vm.currentStand != stand { vm.currentStand = stand }
+            if !vm.isComplete { return }
+        }
         vm.shooters[shooterIndex].scores[stand][target] = next
     }
 }
