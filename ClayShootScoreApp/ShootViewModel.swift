@@ -591,6 +591,7 @@ class ShootViewModel {
     func startNewShoot() {
         removeAllShooters()
         shootStart = Self.halfHour(.now)
+        saveSnapshot()
     }
 
     /// A stand is locked once every shooter has scored every target on it; its scores can then no longer be changed.

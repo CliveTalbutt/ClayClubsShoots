@@ -135,11 +135,11 @@ struct ContentView: View {
             .toolbarTitleDisplayMode(isCompact ? .inline : .automatic)
             .confirmationDialog("Start a new shoot?", isPresented: $isConfirmingNewShoot, titleVisibility: .visible) {
                 if !vm.shooters.isEmpty {
-                    Button("Submit results, then new shoot") { completeShoot(); isShowingRoster = true }
+                    Button("Submit results, then new shoot") { completeShoot(); showRosterSoon() }
                 }
                 Button(vm.shooters.isEmpty ? "New shoot" : "Discard this shoot and start new", role: vm.shooters.isEmpty ? nil : .destructive) {
                     vm.startNewShoot()
-                    isShowingRoster = true
+                    showRosterSoon()
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -266,6 +266,14 @@ struct ContentView: View {
             }
             newShootToolbarButton
             completeShootButton
+        }
+    }
+
+    /// Waits for the confirmation dialog to finish dismissing before presenting the sheet.
+    private func showRosterSoon() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            isShowingRoster = true
         }
     }
 
