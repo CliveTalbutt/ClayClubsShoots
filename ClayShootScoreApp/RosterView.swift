@@ -60,6 +60,9 @@ struct RosterView: View {
                                     .foregroundStyle(entry.isGuest ? .red : .green)
                                     .fontWeight(.semibold)
                                 Spacer()
+                                Image(systemName: entry.verified == true ? "checkmark.seal.fill" : "envelope.badge")
+                                    .foregroundStyle(entry.verified == true ? .green : .secondary)
+                                    .accessibilityLabel(entry.verified == true ? "Email verified" : "Email not verified")
                                 if entry.isAdmin == true {
                                     Text("Admin")
                                         .font(.caption.bold())

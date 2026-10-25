@@ -40,6 +40,7 @@ nonisolated struct RosterShooter: Codable, Identifiable, Hashable, Sendable {
     /// "member" or "guest".
     let kind: String
     var isAdmin: Bool? = false
+    var verified: Bool? = false
     var isGuest: Bool { kind != "member" }
 }
 
