@@ -97,6 +97,9 @@ struct ScoreTableView: View {
     private func isCurrentStand(_ stand: Int) -> Bool { stand == vm.currentStand && !vm.isComplete }
     private func cellWidth(for stand: Int) -> CGFloat { isCurrentStand(stand) ? expandedCellWidth : targetCellWidth }
 
+    /// Keeps the name column fixed at the left edge while the stands scroll under it.
+    private var pinOffset: CGFloat { max(0, visibleRect.minX) }
+
     var body: some View {
         scrollingTable
             .alert("Email address", isPresented: Binding(get: { emailEditID != nil }, set: { if !$0 { emailEditID = nil } })) {
@@ -191,8 +194,11 @@ struct ScoreTableView: View {
         // Also bring the current stand's columns into view horizontally.
         var targetX = visibleRect.minX
         if !vm.isComplete, let stand = standFrames[vm.currentStand] {
-            if stand.width >= visibleRect.width || stand.minX < visibleRect.minX {
-                targetX = stand.minX - margin
+            // The pinned name column covers the left of the viewport.
+            let inset = tablePadding + nameWidth + 6
+            let viewWidth = visibleRect.width - inset
+            if stand.width >= viewWidth || stand.minX < visibleRect.minX + inset {
+                targetX = stand.minX - inset - margin
             } else if stand.maxX > visibleRect.maxX {
                 targetX = stand.maxX + margin - visibleRect.width
             }
@@ -213,6 +219,9 @@ struct ScoreTableView: View {
             Text("Shooter")
                 .font(headerFont)
                 .frame(width: nameWidth, alignment: .leading)
+                .background(Color(.systemBackground))
+                .offset(x: pinOffset)
+                .zIndex(1)
 
             ForEach(0..<standCount, id: \.self) { stand in
                 HStack(spacing: 2) {
@@ -279,6 +288,14 @@ struct ScoreTableView: View {
                 }
             }
             .frame(width: nameWidth, alignment: .leading)
+            .background(
+                ZStack {
+                    Color(.systemBackground)
+                    if isCurrentShooter { Color.accentColor.opacity(0.15) }
+                }
+            )
+            .offset(x: pinOffset)
+            .zIndex(1)
             .contentShape(Rectangle())
             .onTapGesture {
                 vm.selectShooter(at: shooterIndex)
