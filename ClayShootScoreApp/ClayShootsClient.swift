@@ -108,6 +108,37 @@ nonisolated struct ClayShootsClient: Sendable {
         return (try? JSONDecoder().decode(Ping.self, from: data))?.club ?? "your club"
     }
 
+    /// A club the person is a current member of (testing: found by email alone).
+    struct MemberClub: Decodable, Identifiable, Hashable, Sendable { let id: Int; let name: String }
+
+    func lookupClubs(email: String) async throws -> [MemberClub] {
+        var request = URLRequest(url: baseURL.appending(path: "api/v1/clubs/lookup"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["email": email])
+        let (data, response) = try await perform(request)
+        if response.statusCode == 404 { throw ClayShootsError.validation(["the server has club sign-in by email switched off"]) }
+        try Self.check(response, data: data, expected: 200)
+        struct Reply: Decodable { let clubs: [MemberClub] }
+        return try JSONDecoder().decode(Reply.self, from: data).clubs
+    }
+
+    /// Asks the server for a key for this device and the chosen club.
+    func connectClub(email: String, id: Int) async throws -> (club: String, apiKey: String) {
+        var request = URLRequest(url: baseURL.appending(path: "api/v1/clubs/connect"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let email: String; let id: Int }
+        request.httpBody = try JSONEncoder().encode(Body(email: email, id: id))
+        let (data, response) = try await perform(request)
+        try Self.check(response, data: data, expected: 200)
+        struct Reply: Decodable { let club: String; let apiKey: String }
+        let reply = try JSONDecoder().decode(Reply.self, from: data)
+        return (reply.club, reply.apiKey)
+    }
+
     /// The club's current members and guests. Expired members are never returned.
     func fetchRoster() async throws -> [RosterShooter] {
         var request = URLRequest(url: baseURL.appending(path: "api/v1/shooters"))
@@ -200,6 +231,8 @@ final class ClayShootsSettings {
     private static let urlKey = "clayShootsServerURL"
     private static let pinKey = "clayShootsServerPin"
     private static let trustKey = "clayShootsTrustSelfSigned"
+    private static let emailKey = "clayShootsMemberEmail"
+    private static let clubKey = "clayShootsClubName"
     private static let keychainService = "ClayShootsAPIKey"
 
     var serverURL: String {
@@ -220,7 +253,24 @@ final class ClayShootsSettings {
         didSet { UserDefaults.standard.set(trustSelfSigned, forKey: Self.trustKey) }
     }
 
+    var memberEmail: String {
+        didSet { UserDefaults.standard.set(memberEmail, forKey: Self.emailKey) }
+    }
+
+    /// Name of the club chosen from the list, shown in settings.
+    var clubName: String {
+        didSet { UserDefaults.standard.set(clubName, forKey: Self.clubKey) }
+    }
+
+    /// A client for the pre-sign-in calls, which need no API key.
+    var lookupClient: ClayShootsClient? {
+        guard let url = ClayShootsClient.normalisedURL(serverURL) else { return nil }
+        return ClayShootsClient(baseURL: url, apiKey: "", pinnedFingerprint: pinnedFingerprint, trustSelfSigned: trustSelfSigned)
+    }
+
     init() {
+        memberEmail = UserDefaults.standard.string(forKey: Self.emailKey) ?? ""
+        clubName = UserDefaults.standard.string(forKey: Self.clubKey) ?? ""
         trustSelfSigned = UserDefaults.standard.bool(forKey: Self.trustKey)
         pinnedFingerprint = UserDefaults.standard.string(forKey: Self.pinKey) ?? ""
         serverURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""

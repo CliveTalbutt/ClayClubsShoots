@@ -13,6 +13,8 @@ struct SendToServerView: View {
     @State private var status: String?
     @State private var statusIsError = false
     @State private var isBusy = false
+    @State private var clubs: [ClayShootsClient.MemberClub] = []
+    @State private var selectedClub: Int?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -41,6 +43,34 @@ struct SendToServerView: View {
                     Text("Clay Shoots server")
                 } footer: {
                     Text("Only encrypted (https) connections are used. Create the key on the website's Dashboard under API key. If the server uses its own certificate, paste the fingerprint it prints when it starts: the app then trusts only that server and refuses any impostor. The testing switch skips that check so a self-signed server works with no fingerprint; the connection is still encrypted but the server is not verified, so turn it off for real use.")
+                }
+
+                Section {
+                    TextField("Your email address", text: $settings.memberEmail)
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
+                        #endif
+                    Button("Find my clubs") { Task { await findClubs() } }
+                        .disabled(settings.lookupClient == nil || settings.memberEmail.trimmingCharacters(in: .whitespaces).isEmpty || isBusy)
+                    if !clubs.isEmpty {
+                        Picker("Club", selection: $selectedClub) {
+                            Text("Choose a club").tag(Int?.none)
+                            ForEach(clubs) { club in Text(club.name).tag(Int?.some(club.id)) }
+                        }
+                        .onChange(of: selectedClub) { _, id in
+                            if let id { Task { await connect(to: id) } }
+                        }
+                    }
+                    if !settings.clubName.isEmpty {
+                        LabeledContent("Connected to", value: settings.clubName)
+                    }
+                } header: {
+                    Text("My clubs")
+                } footer: {
+                    Text("Testing only: clubs are found from your email address alone, so anyone who knows a member's email could do this. Choosing a club connects this phone to it automatically.")
                 }
 
                 Section {
@@ -76,6 +106,39 @@ struct SendToServerView: View {
                 }
             }
             .overlay { if isBusy { ProgressView() } }
+        }
+    }
+
+    private func findClubs() async {
+        guard let client = settings.lookupClient else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let email = settings.memberEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+            clubs = try await client.lookupClubs(email: email)
+            selectedClub = nil
+            status = clubs.isEmpty ? "No clubs list that email as a current member." : nil
+            statusIsError = true
+        } catch {
+            status = error.localizedDescription
+            statusIsError = true
+        }
+    }
+
+    private func connect(to id: Int) async {
+        guard let client = settings.lookupClient else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let email = settings.memberEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+            let result = try await client.connectClub(email: email, id: id)
+            settings.apiKey = result.apiKey
+            settings.clubName = result.club
+            status = "Connected to \(result.club)."
+            statusIsError = false
+        } catch {
+            status = error.localizedDescription
+            statusIsError = true
         }
     }
 
