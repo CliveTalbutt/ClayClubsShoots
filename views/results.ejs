@@ -10,6 +10,23 @@
   </select>
   <% if (!shoots.length) { %><p class="muted">No shoots yet. Add a shoot to view its results.</p><% } %>
 </form>
+<% if (shoots.length) { %>
+<details class="card" id="manage-shoots">
+  <summary>Select shoots to delete</summary>
+  <form id="bulk-delete" method="post" action="/shoots/delete-selected" data-confirm="Delete the selected shoots and all their results? This cannot be undone." hidden>
+    <input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="/results">
+    <button class="btn small danger">Delete selected (<span id="bulk-count">0</span>)</button>
+  </form>
+  <table>
+    <thead><tr><th><input type="checkbox" id="select-all" aria-label="Select all shoots"></th><th>Date</th><th>Shoot</th><th>Venue</th></tr></thead>
+    <tbody>
+    <% shoots.forEach(item => { %>
+      <tr><td><input type="checkbox" class="shoot-select" form="bulk-delete" name="ids" value="<%= eid(item.id) %>" aria-label="Select shoot"></td><td><%= when(item) %></td><td><a href="/results?shoot=<%= eid(item.id) %>"><%= item.name %></a></td><td><%= item.venue || '' %></td></tr>
+    <% }) %>
+    </tbody>
+  </table>
+</details>
+<% } %>
 <% if (shoot) { %>
 <form method="post" action="/shoots/<%= eid(shoot.id) %>/delete" class="inline" data-confirm="Delete this shoot and all its results? This cannot be undone.">
   <input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="/results">
@@ -89,6 +106,7 @@
     <% } %>
   </section>
 <% } %>
+<script src="/bulk-select.js" defer></script>
 <script src="/results.js" defer></script>
 <script src="/clays.js" defer></script>
 <%- include('partials/foot') %>

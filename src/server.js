@@ -508,7 +508,7 @@ app.post('/shoots/delete-selected', needAuth, (req, res) => {
       if (id != null) del.run(id, req.session.userId);
     }
   })();
-  res.redirect('/dashboard');
+  res.redirect(['/results', '/dashboard'].includes(req.body.from) ? req.body.from : '/dashboard');
 });
 
 app.post('/settings/api-key', needAuth, (req, res) => {
