@@ -78,7 +78,7 @@ struct ContentView: View {
 
                 statusBar
 
-                if vm.isManualMode, !vm.isAddingShooter, !vm.isComplete {
+                if vm.isManualMode, !vm.shooters.isEmpty, !vm.isAddingShooter, !vm.isComplete {
                     manualButtons
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -88,6 +88,7 @@ struct ContentView: View {
             .animation(.snappy, value: vm.isAddingShooter)
             .animation(.snappy, value: vm.isComplete)
             .animation(.snappy, value: vm.isManualMode)
+            .animation(.snappy, value: vm.shooters.isEmpty)
             .onAppear {
                 isScoreTableFocused = true
                 // Listening is always on: start as soon as the app is showing.
