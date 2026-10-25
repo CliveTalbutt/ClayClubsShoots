@@ -97,22 +97,33 @@ struct ScoreTableView: View {
     private func isCurrentStand(_ stand: Int) -> Bool { stand == vm.currentStand && !vm.isComplete }
     private func cellWidth(for stand: Int) -> CGFloat { isCurrentStand(stand) ? expandedCellWidth : targetCellWidth }
 
-    /// Keeps the name column fixed at the left edge while the stands scroll under it.
-    private var pinOffset: CGFloat { max(0, visibleRect.minX) }
-
-    /// Opaque backing for the pinned column; it reaches left over the table padding and
-    /// right over the gap so scrolled stands are fully hidden behind it.
-    private func pinnedBackground(highlight: Bool) -> some View {
-        ZStack {
-            Color(.systemBackground)
-            if highlight { Color.accentColor.opacity(0.15) }
+    /// The names sit in a fixed layer above the table, so stands scrolling sideways
+    /// are hidden behind it while it follows the vertical scroll exactly.
+    private var pinnedNames: some View {
+        let width = tablePadding + nameWidth + 6
+        return ZStack(alignment: .topLeading) {
+            Rectangle().fill(.background.secondary)
+            Text("Shooter")
+                .font(headerFont)
+                .frame(width: nameWidth, alignment: .leading)
+                .offset(x: tablePadding, y: tablePadding - visibleRect.minY)
+            ForEach(vm.shooters.indices, id: \.self) { index in
+                if let row = rowFrames[vm.shooters[index].id] {
+                    nameCell(index)
+                        .frame(width: nameWidth, height: row.height, alignment: .leading)
+                        .background(index == vm.currentShooterIndex && !vm.isComplete ? Color.accentColor.opacity(0.15) : .clear)
+                        .offset(x: row.minX, y: row.minY - visibleRect.minY)
+                }
+            }
         }
-        .padding(.leading, -tablePadding)
-        .padding(.trailing, -6)
+        .frame(width: width)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .clipped()
     }
 
     var body: some View {
         scrollingTable
+            .overlay(alignment: .topLeading) { pinnedNames }
             .alert("Email address", isPresented: Binding(get: { emailEditID != nil }, set: { if !$0 { emailEditID = nil } })) {
                 TextField("name@example.com", text: $emailDraft)
                     .keyboardType(.emailAddress)
@@ -227,12 +238,7 @@ struct ScoreTableView: View {
 
     private var headerRow: some View {
         HStack(spacing: 6) {
-            Text("Shooter")
-                .font(headerFont)
-                .frame(width: nameWidth, alignment: .leading)
-                .background(pinnedBackground(highlight: false))
-                .offset(x: pinOffset)
-                .zIndex(1)
+            Color.clear.frame(width: nameWidth, height: 1)
 
             ForEach(0..<standCount, id: \.self) { stand in
                 HStack(spacing: 2) {
@@ -273,47 +279,7 @@ struct ScoreTableView: View {
         let isCurrentShooter = shooterIndex == vm.currentShooterIndex && !vm.isComplete
 
         return HStack(spacing: 6) {
-            // Clicking a name also makes that shooter current.
-            HStack(spacing: 4) {
-                Image(systemName: "arrowtriangle.right.fill")
-                    .font(.caption2)
-                    .foregroundStyle(Color.accentColor)
-                    .opacity(isCurrentShooter ? 1 : 0)
-                Text(shooter.name.capitalized)
-                    .font(.subheadline)
-                    .fontWeight(isCurrentShooter ? .bold : .regular)
-                    .foregroundStyle(isCurrentShooter ? Color.accentColor : (vm.kind(for: shooter.name).map { $0 == "member" ? Color.green : ($0 == "guest" ? Color.red : Color.gray) } ?? .primary))
-                    .lineLimit(1)
-                if vm.kind(for: shooter.name) == "guest" {
-                    Text("G")
-                        .font(.system(size: 9, weight: .bold))
-                        .padding(.horizontal, 4)
-                        .background(.red, in: .capsule)
-                        .foregroundStyle(.white)
-                        .accessibilityLabel("Guest")
-                }
-                if vm.email(for: shooter.name) != nil {
-                    Image(systemName: "envelope.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: nameWidth, alignment: .leading)
-            .background(pinnedBackground(highlight: isCurrentShooter))
-            .offset(x: pinOffset)
-            .zIndex(1)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                vm.selectShooter(at: shooterIndex)
-            }
-            .contextMenu {
-                Button {
-                    emailDraft = vm.email(for: shooter.name) ?? ""
-                    emailEditID = shooter.id
-                } label: {
-                    Label("Email address…", systemImage: "envelope")
-                }
-            }
+            Color.clear.frame(width: nameWidth, height: 1)
 
             ForEach(0..<standCount, id: \.self) { stand in
                 standCells(shooterIndex: shooterIndex, stand: stand)
@@ -332,6 +298,49 @@ struct ScoreTableView: View {
         .padding(.vertical, 4)
         .background(isCurrentShooter ? Color.accentColor.opacity(0.15) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    /// One name in the pinned column, drawn above the scrolling table.
+    private func nameCell(_ shooterIndex: Int) -> some View {
+        let shooter = vm.shooters[shooterIndex]
+        let isCurrentShooter = shooterIndex == vm.currentShooterIndex && !vm.isComplete
+        return HStack(spacing: 4) {
+    Image(systemName: "arrowtriangle.right.fill")
+        .font(.caption2)
+        .foregroundStyle(Color.accentColor)
+        .opacity(isCurrentShooter ? 1 : 0)
+    Text(shooter.name.capitalized)
+        .font(.subheadline)
+        .fontWeight(isCurrentShooter ? .bold : .regular)
+        .foregroundStyle(isCurrentShooter ? Color.accentColor : (vm.kind(for: shooter.name).map { $0 == "member" ? Color.green : ($0 == "guest" ? Color.red : Color.gray) } ?? .primary))
+        .lineLimit(1)
+    if vm.kind(for: shooter.name) == "guest" {
+        Text("G")
+            .font(.system(size: 9, weight: .bold))
+            .padding(.horizontal, 4)
+            .background(.red, in: .capsule)
+            .foregroundStyle(.white)
+            .accessibilityLabel("Guest")
+    }
+    if vm.email(for: shooter.name) != nil {
+        Image(systemName: "envelope.fill")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+    }
+}
+.frame(width: nameWidth, alignment: .leading)
+.contentShape(Rectangle())
+.onTapGesture {
+    vm.selectShooter(at: shooterIndex)
+}
+.contextMenu {
+    Button {
+        emailDraft = vm.email(for: shooter.name) ?? ""
+        emailEditID = shooter.id
+    } label: {
+        Label("Email address…", systemImage: "envelope")
+    }
+}
     }
 
     /// The 10 target cells and stand total for one shooter on one stand.
