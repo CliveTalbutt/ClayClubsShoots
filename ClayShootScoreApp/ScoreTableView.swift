@@ -307,7 +307,7 @@ struct ScoreTableView: View {
     Text(shooter.name.capitalized)
         .font(.subheadline)
         .fontWeight(isCurrentShooter ? .bold : .regular)
-        .foregroundStyle(isCurrentShooter ? Color.accentColor : (vm.kind(for: shooter.name).map { $0 == "member" ? Color.green : ($0 == "guest" ? Color.red : Color.gray) } ?? .primary))
+        .foregroundStyle(Color.accentColor)
         .lineLimit(1)
     if vm.kind(for: shooter.name) == "guest" {
         Text("G")
