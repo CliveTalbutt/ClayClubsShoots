@@ -552,7 +552,9 @@ app.use((err, req, res, next) => {
 
 const port = process.env.PORT || 3000;
 if (tlsConfig) {
-  require('https').createServer({ cert: tlsConfig.cert, key: tlsConfig.key, minVersion: 'TLSv1.2', honorCipherOrder: true }, app)
+  require('https').createServer({ cert: tlsConfig.cert, key: tlsConfig.key, minVersion: 'TLSv1.2', honorCipherOrder: true,
+    // Classic curves only: Apple's hybrid post-quantum key share makes this Node build abort the handshake.
+    ecdhCurve: 'X25519:prime256v1:secp384r1' }, app)
     .listen(port, () => {
       console.log(`Clay Shoots running securely on ${BASE_URL}`);
       if (tlsConfig.fingerprint) console.log(`Server key fingerprint (enter this in the phone app): ${tlsConfig.fingerprint}`);

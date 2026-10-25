@@ -9,11 +9,15 @@ const { execFileSync } = require('child_process');
 
 const dir = path.join(__dirname, '..', 'data', 'tls');
 
-// SHA-256 (hex) of the raw EC public key point. The iPhone app computes the same value from the
+// SHA-256 (hex) of the public key as Apple's SecKeyCopyExternalRepresentation returns it (PKCS#1 for RSA, X9.63 point for EC). The iPhone app computes the same value from the
 // certificate it is shown, so both sides can compare without parsing ASN.1.
 function fingerprint(certPem) {
   try {
-    const jwk = new crypto.X509Certificate(certPem).publicKey.export({ format: 'jwk' });
+    const pub = new crypto.X509Certificate(certPem).publicKey;
+    if (pub.asymmetricKeyType === 'rsa') {
+      return crypto.createHash('sha256').update(pub.export({ type: 'pkcs1', format: 'der' })).digest('hex');
+    }
+    const jwk = pub.export({ format: 'jwk' });
     if (jwk.kty !== 'EC') return null;
     const point = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]);
     return crypto.createHash('sha256').update(point).digest('hex');
@@ -34,7 +38,7 @@ function selfSigned(baseUrl) {
   }
   for (const n of names) if (n && !/^\d+\.\d+\.\d+\.\d+$/.test(n)) sans.push(`DNS:${n}`);
   execFileSync('openssl', [
-    'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes',
+    'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256',
     '-days', '3650', '-keyout', keyFile, '-out', certFile, '-subj', '/CN=Clay Shoots',
     '-addext', `subjectAltName=${sans.join(',')}`,
   ], { stdio: 'ignore' });
