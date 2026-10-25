@@ -62,9 +62,18 @@ struct ScoreTableView: View {
 
     /// Width of the bordered block of target cells for one stand, so the header
     /// lines up with the rows even though the table scrolls horizontally.
-    private var standCellsWidth: CGFloat {
-        CGFloat(targetCount) * targetCellWidth + CGFloat(targetCount - 1) * targetCellSpacing + 4
+    private func standCellsWidth(for stand: Int) -> CGFloat {
+        CGFloat(targetCount) * cellWidth(for: stand) + CGFloat(targetCount - 1) * targetCellSpacing + 4
     }
+
+    /// The current stand is widened for every shooter, and the current shooter's cells on it are
+    /// taller and larger still, so entries are easy to see and tap. Both shrink back when the
+    /// shooter or stand changes.
+    private let expandedCellWidth: CGFloat = 30
+    private let expandedCellHeight: CGFloat = 44
+
+    private func isCurrentStand(_ stand: Int) -> Bool { stand == vm.currentStand && !vm.isComplete }
+    private func cellWidth(for stand: Int) -> CGFloat { isCurrentStand(stand) ? expandedCellWidth : targetCellWidth }
 
     var body: some View {
         scrollingTable
@@ -188,7 +197,7 @@ struct ScoreTableView: View {
                     Text("Stand \(stand + 1)")
                         .font(headerFont)
                         .foregroundStyle(stand == vm.currentStand && !vm.isComplete ? Color.accentColor : .primary)
-                        .frame(width: standCellsWidth)
+                        .frame(width: standCellsWidth(for: stand))
 
                     // Blank space above the stand total column keeps the header aligned
                     // with the rows without labelling every stand total.
@@ -285,13 +294,14 @@ struct ScoreTableView: View {
         let shooter = vm.shooters[shooterIndex]
         let standScores = shooter.scores.indices.contains(stand) ? shooter.scores[stand] : []
         let isCurrentStand = stand == vm.currentStand && !vm.isComplete
+        let isActiveCell = isCurrentStand && shooterIndex == vm.currentShooterIndex
 
         return HStack(spacing: 2) {
             HStack(spacing: targetCellSpacing) {
                 ForEach(0..<targetCount, id: \.self) { target in
                     let score = target < standScores.count ? standScores[target] : -1
-                    cellSymbol(for: score)
-                        .frame(width: targetCellWidth, height: targetCellHeight)
+                    cellSymbol(for: score, large: isActiveCell)
+                        .frame(width: cellWidth(for: stand), height: isActiveCell ? expandedCellHeight : targetCellHeight)
                         .background(cellColor(for: score))
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                         .contentShape(Rectangle())
@@ -303,8 +313,10 @@ struct ScoreTableView: View {
             .padding(2)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(isCurrentStand ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 1)
+                    .stroke(isCurrentStand ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: isActiveCell ? 2 : 1)
             )
+            .animation(.snappy, value: isActiveCell)
+            .animation(.snappy, value: isCurrentStand)
 
             Text("\(shooter.standTotal(stand))")
                 .font(totalFont.monospacedDigit())
@@ -334,19 +346,20 @@ struct ScoreTableView: View {
     /// A green tick for a hit, a red cross for a miss and a dash for a target
     /// that has not been shot yet.
     @ViewBuilder
-    private func cellSymbol(for score: Int) -> some View {
+    private func cellSymbol(for score: Int, large: Bool = false) -> some View {
+        let font: Font = large ? .title3 : cellFont
         switch score {
         case let hit where hit > 0:
             Image(systemName: "checkmark")
-                .font(cellFont.weight(.bold))
+                .font(font.weight(.bold))
                 .foregroundStyle(.green)
         case 0:
             Image(systemName: "xmark")
-                .font(cellFont.weight(.bold))
+                .font(font.weight(.bold))
                 .foregroundStyle(.red)
         default:
             Text("-")
-                .font(cellFont)
+                .font(font)
                 .foregroundStyle(.secondary)
         }
     }
