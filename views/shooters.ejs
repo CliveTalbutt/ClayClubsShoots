@@ -27,11 +27,12 @@
   </form>
   <% if (roster.length) { %>
   <table class="results-table social-table">
-    <thead><tr><th>Name</th><th>Email</th><th>Type</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Shoots</th><th>Email</th><th>Type</th><th></th></tr></thead>
     <tbody>
       <% roster.forEach(r => { const cls = r.status === 'expired' ? 'tag-expired' : (r.kind === 'member' ? 'tag-member' : 'tag-guest'); %>
         <tr>
-          <th scope="row"><span class="<%= cls %>"><%= r.name %></span></th>
+          <th scope="row"><span class="<%= cls %>"<%- shooterAttrs(r.name) %>><%= r.name %></span></th>
+          <td><%= r.shoots %></td>
           <td><%= r.email %></td>
           <td><span class="<%= cls %>"><%= r.status === 'expired' ? 'Expired ' + r.kind : (r.kind === 'member' ? 'Member' : 'Guest') %></span><% if (r.is_admin) { %> <span class="badge ok">Admin</span><% } %></td>
           <td class="social-actions">
@@ -53,38 +54,4 @@
   <% } else { %><p class="muted">No shooters on the roster yet.</p><% } %>
 </section>
 
-<h2>Results and emails</h2>
-<% if (!shooters.length) { %>
-  <p class="muted">No shooters yet. They appear here after the first upload.</p>
-<% } else { %>
-  <table class="results-table social-table">
-    <thead><tr><th>Shooter</th><th>Shoots</th><th>Email</th><th>Last email</th><th></th></tr></thead>
-    <tbody>
-      <% shooters.forEach(s => { %>
-        <tr>
-          <th scope="row"><span<%- shooterAttrs(s.name) %>><%= s.name %></span></th>
-          <td><%= s.shoots %></td>
-          <td>
-            <form method="post" action="/shooters/email" class="social-actions">
-              <input type="hidden" name="_csrf" value="<%= csrf %>">
-              <input type="hidden" name="name" value="<%= s.name %>">
-              <input type="email" name="email" maxlength="200" value="<%= s.rec ? s.rec.email : '' %>" placeholder="name@example.com" aria-label="Email for <%= s.name %>">
-              <button class="btn small secondary">Save</button>
-            </form>
-          </td>
-          <td><%= s.rec && s.rec.last_status ? s.rec.last_status : '' %><% if (s.rec && s.rec.last_at) { %> <span class="muted">(<%= s.rec.last_at %> UTC)</span><% } %></td>
-          <td>
-            <% if (s.rec) { %>
-              <form method="post" action="/shooters/send" class="social-actions">
-                <input type="hidden" name="_csrf" value="<%= csrf %>">
-                <input type="hidden" name="name" value="<%= s.name %>">
-                <button class="btn small secondary">Send latest results</button>
-              </form>
-            <% } %>
-          </td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
-<% } %>
 <%- include('partials/foot') %>

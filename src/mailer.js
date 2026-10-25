@@ -235,7 +235,9 @@ ${notes.map((n) => `<p>${esc(n)}</p>`).join('')}
     const emails = new Map(db.prepare('SELECT * FROM shooter_emails WHERE user_id = ?').all(uid).map((e) => [e.shooter_key, e]));
     const shooters = names.map((n) => ({ name: n.shooter, shoots: n.shoots, rec: emails.get(key(n.shooter)) || null }));
     const auto = db.prepare('SELECT email_results FROM users WHERE id = ?').get(uid).email_results === 1;
-    res.render('shooters', { shooters, auto, configured: configured(), msg: req.query.msg || null, err: req.query.err || null });
+    const counts = new Map(names.map((n) => [key(n.shooter), n.shoots]));
+    const roster = (res.locals.roster || []).map((r) => ({ ...r, shoots: counts.get(r.name_key) || 0 }));
+    res.render('shooters', { roster, shooters, auto, configured: configured(), msg: req.query.msg || null, err: req.query.err || null });
   });
 
   router.post('/email', needAuth, (req, res) => {
