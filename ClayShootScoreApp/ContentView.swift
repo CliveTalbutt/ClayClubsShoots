@@ -212,6 +212,7 @@ struct ContentView: View {
             rosterButton
             addShootersButton
             modeButton
+            if !vm.isManualMode { listenButton }
             serverSettingsButton
             Menu {
                 standsPicker
