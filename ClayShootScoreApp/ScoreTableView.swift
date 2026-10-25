@@ -103,7 +103,11 @@ struct ScoreTableView: View {
         let width = tablePadding + nameWidth + 6
         return ZStack(alignment: .topLeading) {
             Rectangle().fill(.background.secondary)
-            Text("Shooter")
+            HStack {
+                Text("Shooter")
+                Spacer()
+                Text("Total")
+            }
                 .font(headerFont)
                 .frame(width: nameWidth, alignment: .leading)
                 .offset(x: tablePadding, y: tablePadding - visibleRect.minY)
@@ -260,10 +264,6 @@ struct ScoreTableView: View {
                 }
             }
 
-            Text("Total")
-                .font(headerFont)
-                .frame(width: grandTotalWidth)
-
             if vm.isComplete {
                 Text("Place")
                     .font(headerFont)
@@ -284,11 +284,6 @@ struct ScoreTableView: View {
             ForEach(0..<standCount, id: \.self) { stand in
                 standCells(shooterIndex: shooterIndex, stand: stand)
             }
-
-            Text("\(shooter.grandTotal)")
-                .font(.subheadline.monospacedDigit())
-                .bold()
-                .frame(width: grandTotalWidth)
 
             if vm.isComplete {
                 placeLabel(for: shooter)
@@ -322,11 +317,10 @@ struct ScoreTableView: View {
             .foregroundStyle(.white)
             .accessibilityLabel("Guest")
     }
-    if vm.email(for: shooter.name) != nil {
-        Image(systemName: "envelope.fill")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-    }
+    Spacer(minLength: 2)
+    Text("\(shooter.grandTotal)")
+        .font(.subheadline.monospacedDigit())
+        .bold()
 }
 .frame(width: nameWidth, alignment: .leading)
 .contentShape(Rectangle())
