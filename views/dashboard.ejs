@@ -1,6 +1,7 @@
 <%- include('partials/head') %>
 <h1><%= user.club_name %></h1>
 
+<% if (user.is_super === 1) { %>
 <section class="card">
   <h2>Subscription</h2>
   <% const msgs = { ok: ['ok', 'Payment received. Thank you!'], pending: ['warn', 'Payment started. Access will switch on as soon as the provider confirms it.'], failed: ['warn', 'Sorry, that payment could not be started or confirmed. Please try again or use another method.'], cancelled: ['warn', 'Payment cancelled.'] }; %>
@@ -56,6 +57,7 @@
 }</code></pre>
   </details>
 </section>
+<% } %>
 
 <section class="card">
   <div class="row"><h2>Shoots</h2>

@@ -511,7 +511,7 @@ app.post('/shoots/delete-selected', needAuth, (req, res) => {
   res.redirect(['/results', '/dashboard'].includes(req.body.from) ? req.body.from : '/dashboard');
 });
 
-app.post('/settings/api-key', needAuth, (req, res) => {
+app.post('/settings/api-key', needAuth, needSuper, (req, res) => {
   const key = 'cs_' + crypto.randomBytes(32).toString('hex');
   db.prepare('UPDATE users SET api_key_hash = ? WHERE id = ?').run(hashKey(key), req.session.userId);
   req.session.newKey = key;
