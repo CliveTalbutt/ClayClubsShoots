@@ -32,7 +32,7 @@ class ShootViewModel {
     /// The number of stands a new shoot starts with.
     static let defaultNumberOfStands = 5
     /// The stand counts that can be chosen in the control panel.
-    static let standOptions = Array(5...10)
+    static let standOptions = Array(1...20)
     /// The number of targets shot on each stand.
     static let targetsPerStand = 10
     /// The most shooters a shoot can have.
@@ -145,7 +145,10 @@ class ShootViewModel {
     /// User-editable name of the shoot, shown in the heading alongside today's date.
     /// Saved to user defaults so it survives relaunching the app.
     var shootName: String {
-        didSet { UserDefaults.standard.set(shootName, forKey: Self.shootNameKey) }
+        didSet {
+            UserDefaults.standard.set(shootName, forKey: Self.shootNameKey)
+            restoreStands(forShoot: shootName)
+        }
     }
 
     /// The number of stands in the shoot. Every shooter has this many rows of targets.
@@ -155,8 +158,31 @@ class ShootViewModel {
         didSet {
             guard numberOfStands != oldValue else { return }
             UserDefaults.standard.set(numberOfStands, forKey: Self.numberOfStandsKey)
+            rememberStands(numberOfStands, forShoot: shootName)
             applyStandCount()
         }
+    }
+
+    private static let standsByShootKey = "standsByShoot"
+
+    private static func shootKey(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
+    private func rememberStands(_ count: Int, forShoot name: String) {
+        var map = (UserDefaults.standard.dictionary(forKey: Self.standsByShootKey) as? [String: Int]) ?? [:]
+        map[Self.shootKey(name)] = count
+        UserDefaults.standard.set(map, forKey: Self.standsByShootKey)
+    }
+
+    /// Switching to a shoot that has been run before restores its last stand count,
+    /// but only while nothing is scored so no results are ever trimmed.
+    private func restoreStands(forShoot name: String) {
+        guard !hasAnyScore,
+              let map = UserDefaults.standard.dictionary(forKey: Self.standsByShootKey) as? [String: Int],
+              let count = map[Self.shootKey(name)], Self.standOptions.contains(count),
+              count != numberOfStands else { return }
+        numberOfStands = count
     }
 
     init() {
