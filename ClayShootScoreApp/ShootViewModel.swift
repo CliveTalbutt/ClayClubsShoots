@@ -586,6 +586,13 @@ class ShootViewModel {
         currentTarget = 0
     }
 
+    /// Clears the finished shoot and gets ready for the next one, with a fresh session
+    /// and the start time reset to now.
+    func startNewShoot() {
+        removeAllShooters()
+        shootStart = Self.halfHour(.now)
+    }
+
     /// A stand is locked once every shooter has scored every target on it; its scores can then no longer be changed.
     func isStandLocked(_ stand: Int) -> Bool {
         !shooters.isEmpty && shooters.indices.allSatisfy {

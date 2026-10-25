@@ -14,6 +14,7 @@ struct ContentView: View {
 
     @State private var exportMessage: String?
     @State private var isShowingHelp = false
+    @State private var isConfirmingComplete = false
     @State private var isShowingSettings = false
     @State private var isShowingRoster = false
     @State private var serverSettings = ClayShootsSettings()
@@ -128,6 +129,12 @@ struct ContentView: View {
             // the navigation bar is left without a title to save vertical space.
             .navigationTitle(isCompact ? "" : vm.title)
             .toolbarTitleDisplayMode(isCompact ? .inline : .automatic)
+            .confirmationDialog("Complete this shoot?", isPresented: $isConfirmingComplete, titleVisibility: .visible) {
+                Button("Complete and submit results") { completeShoot() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Any targets not yet scored count as misses. The results are sent to the server and a new shoot is started.")
+            }
             .toolbar {
                 if isCompact {
                     compactControlPanel
@@ -237,7 +244,28 @@ struct ContentView: View {
             } label: {
                 Label("Voice Commands", systemImage: "questionmark.circle")
             }
+            completeShootButton
         }
+    }
+
+    private var completeShootButton: some View {
+        Button {
+            isConfirmingComplete = true
+        } label: {
+            Label("Complete Shoot", systemImage: "flag.checkered")
+        }
+        .disabled(vm.shooters.isEmpty)
+    }
+
+    /// Closes the shoot as if every target had been scored (unscored targets count as
+    /// misses), queues the final results for the server, and clears the sheet for a new shoot.
+    private func completeShoot() {
+        guard let upload = vm.makeUpload(externalId: vm.shootSessionId, forceComplete: true),
+              let body = try? JSONEncoder().encode(upload) else { return }
+        UploadOutbox.save(id: upload.externalId, body: body)
+        vm.startNewShoot()
+        exportMessage = "Shoot completed: submitting results…"
+        Task { await flushOutbox() }
     }
 
     private var modeButton: some View {

@@ -241,7 +241,7 @@ extension ShootViewModel {
     /// Builds the API payload from the current scoresheet. Targets not yet shot
     /// count as misses, and blank or repeated shooter names are made unique because
     /// the server requires distinct names.
-    func makeUpload(externalId: String) -> ShootUpload? {
+    func makeUpload(externalId: String, forceComplete: Bool = false) -> ShootUpload? {
         guard !shooters.isEmpty else { return nil }
         let targets = shooters.first?.scores.first?.count ?? Self.targetsPerStand
         var used = Set<String>()
@@ -276,7 +276,7 @@ extension ShootViewModel {
             time: String(format: "%02d:%02d", Calendar.current.component(.hour, from: shootStart), Calendar.current.component(.minute, from: shootStart)),
             stands: numberOfStands,
             targetsPerStand: targets,
-            complete: isComplete,
+            complete: isComplete || forceComplete,
             shooters: entries
         )
     }
