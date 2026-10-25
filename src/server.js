@@ -92,10 +92,54 @@ reminders.schedule();
 const social = require('./social')({ db, encrypt, decrypt, needAuth: (q, r, n) => needAuth(q, r, n), wrap });
 
 // ---- JSON API for the iPhone app (bearer key, no cookies/CSRF) ----
+db.exec(`CREATE TABLE IF NOT EXISTS device_keys (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key_hash TEXT NOT NULL UNIQUE,
+  email TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`);
+// A club's main key or any per-device key issued to one of its members.
+const userByKey = (key) => {
+  const h = hashKey(key);
+  return db.prepare('SELECT * FROM users WHERE api_key_hash = ?').get(h)
+    || db.prepare('SELECT u.* FROM device_keys d JOIN users u ON u.id = d.user_id WHERE d.key_hash = ?').get(h);
+};
+// TESTING ONLY: identify a member by email alone, list their clubs, and issue a per-device key.
+// Anyone who knows a member's email can do this, so it is off unless ALLOW_EMAIL_ONLY_LOGIN=1 and never in production.
+const emailLoginOn = () => process.env.ALLOW_EMAIL_ONLY_LOGIN === '1' && process.env.NODE_ENV !== 'production';
+const loginLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: true, legacyHeaders: false });
+function memberClubs(email) {
+  const rows = db.prepare(`SELECT u.id, u.club_name,
+      (SELECT COUNT(*) FROM shoots s WHERE s.user_id = u.id) AS shoots
+    FROM roster r JOIN users u ON u.id = r.user_id
+    WHERE lower(r.email) = ? AND r.kind = 'member' AND r.status = 'current' AND u.is_super = 0`).all(email);
+  const best = new Map();
+  for (const r of rows) { const c = best.get(r.club_name); if (!c || r.shoots > c.shoots) best.set(r.club_name, r); }
+  return [...best.values()].sort((a, b) => a.club_name.localeCompare(b.club_name));
+}
+const cleanEmail = (v) => String(v || '').trim().toLowerCase().slice(0, 200);
+app.post('/api/v1/clubs/lookup', loginLimiter, express.json({ limit: '2kb' }), (req, res) => {
+  if (!emailLoginOn()) return res.status(404).json({ error: 'not_enabled' });
+  const email = cleanEmail(req.body && req.body.email);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'invalid_email' });
+  res.set('Cache-Control', 'no-store').json({ clubs: memberClubs(email).map((c) => ({ id: c.id, name: c.club_name })) });
+});
+app.post('/api/v1/clubs/connect', loginLimiter, express.json({ limit: '2kb' }), (req, res) => {
+  if (!emailLoginOn()) return res.status(404).json({ error: 'not_enabled' });
+  const email = cleanEmail(req.body && req.body.email);
+  const id = Number(req.body && req.body.id);
+  const club = memberClubs(email).find((c) => c.id === id);
+  if (!club) return res.status(403).json({ error: 'not_a_member' });
+  const key = 'cs_' + crypto.randomBytes(24).toString('hex');
+  db.prepare('INSERT INTO device_keys (user_id, key_hash, email) VALUES (?,?,?)').run(club.id, hashKey(key), email);
+  db.prepare('DELETE FROM device_keys WHERE id IN (SELECT id FROM device_keys WHERE user_id = ? AND email = ? ORDER BY id DESC LIMIT -1 OFFSET 5)').run(club.id, email);
+  res.set('Cache-Control', 'no-store').json({ club: club.club_name, apiKey: key });
+});
 const apiLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true, legacyHeaders: false });
 app.get('/api/v1/ping', apiLimiter, (req, res) => {
   const m = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization || '');
-  const user = m && db.prepare('SELECT * FROM users WHERE api_key_hash = ?').get(hashKey(m[1]));
+  const user = m && userByKey(m[1]);
   if (!user) return res.status(401).json({ error: 'invalid_api_key' });
   if (!isActive(user)) return res.status(402).json({ error: 'subscription_required' });
   res.json({ ok: true, club: user.club_name });
@@ -103,7 +147,7 @@ app.get('/api/v1/ping', apiLimiter, (req, res) => {
 // Roster of registered shooters for the club that owns the API key.
 const apiUser = (req, res) => {
   const m = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization || '');
-  const user = m && db.prepare('SELECT * FROM users WHERE api_key_hash = ?').get(hashKey(m[1]));
+  const user = m && userByKey(m[1]);
   if (!user) { res.status(401).json({ error: 'invalid_api_key' }); return null; }
   if (!isActive(user)) { res.status(402).json({ error: 'subscription_required' }); return null; }
   return user;
@@ -129,7 +173,7 @@ function notifyOnce(userId, shootId, flags) {
 }
 app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res) => {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
-  const user = m && db.prepare('SELECT * FROM users WHERE api_key_hash = ?').get(hashKey(m[1]));
+  const user = m && userByKey(m[1]);
   if (!user) return res.status(401).json({ error: 'invalid_api_key' });
   if (!isActive(user)) return res.status(402).json({ error: 'subscription_required' });
 
