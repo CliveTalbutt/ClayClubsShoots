@@ -446,7 +446,7 @@ app.get('/shoots/:token', needAuth, (req, res) => {
 app.post('/shoots/:token/delete', needAuth, (req, res) => {
   const shootId = decodeId(req.session.userId, req.params.token);
   if (shootId != null) db.prepare('DELETE FROM shoots WHERE id = ? AND user_id = ?').run(shootId, req.session.userId);
-  res.redirect('/dashboard');
+  res.redirect(['/results', '/dashboard'].includes(req.body.from) ? req.body.from : '/dashboard');
 });
 
 app.post('/settings/api-key', needAuth, (req, res) => {

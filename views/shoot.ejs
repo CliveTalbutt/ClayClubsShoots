@@ -1,7 +1,7 @@
 <%- include('partials/head') %>
 <div class="row">
   <div><h1><%= shoot.name %></h1><p class="muted"><%= when(shoot) %><%= shoot.venue ? ' · ' + shoot.venue : '' %> · <%= shoot.stands %> stands × <%= shoot.targets_per_stand %></p></div>
-  <form method="post" action="/shoots/<%= eid(shoot.id) %>/delete"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small danger">Delete</button></form>
+  <form method="post" action="/shoots/<%= eid(shoot.id) %>/delete" data-confirm="Delete this shoot and all its results? This cannot be undone."><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small danger">Delete</button></form>
 </div>
 <section class="card">
   <table>

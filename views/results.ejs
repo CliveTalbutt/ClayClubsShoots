@@ -10,6 +10,12 @@
   </select>
   <% if (!shoots.length) { %><p class="muted">No shoots yet. Add a shoot to view its results.</p><% } %>
 </form>
+<% if (shoot) { %>
+<form method="post" action="/shoots/<%= eid(shoot.id) %>/delete" class="inline" data-confirm="Delete this shoot and all its results? This cannot be undone.">
+  <input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="/results">
+  <button class="btn small danger">Delete this shoot</button>
+</form>
+<% } %>
 
 <% if (shoot) { %>
   <section class="card">
