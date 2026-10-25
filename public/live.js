@@ -3,6 +3,7 @@ const watched = ['/results', '/leaderboard', '/dashboard', '/shoots/', '/shooter
 
 if (watched.some((p) => location.pathname.startsWith(p))) {
   let last = null;
+  let lastAdded = null;
   const busy = () => {
     const a = document.activeElement;
     return a && (a.matches('input, textarea') || a.isContentEditable);
@@ -23,7 +24,11 @@ if (watched.some((p) => location.pathname.startsWith(p))) {
     try {
       const res = await fetch('/live', { headers: { Accept: 'application/json' }, cache: 'no-store' });
       if (!res.ok) return;
-      const { v } = await res.json();
+      const { v, added } = await res.json();
+      const isNew = lastAdded !== null && added > lastAdded;
+      lastAdded = added;
+      // A newly added shoot takes over the results page.
+      if (isNew && location.pathname.startsWith('/results') && !busy()) { location.href = '/results'; return; }
       if (last === null) last = v;
       else if (v !== last) {
         last = v;

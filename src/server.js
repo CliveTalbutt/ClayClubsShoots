@@ -620,7 +620,7 @@ app.get('/live', needAuth, (req, res) => {
   const s = db.prepare('SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m, COALESCE(MAX(updated_at), \'\') AS u, COALESCE(group_concat(shoot_date || COALESCE(shoot_time, \'\') || name || COALESCE(venue, \'\'), \'|\'), \'\') AS d FROM shoots WHERE user_id = ?').get(uid);
   const r = db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(r.score),0) AS t FROM results r JOIN shoots s ON s.id = r.shoot_id WHERE s.user_id = ?').get(uid);
   const ro = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(id * (1 + (kind = 'member') + 2 * (status = 'expired') + 4 * is_admin)), 0) AS t FROM roster WHERE user_id = ?").get(uid);
-  res.set('Cache-Control', 'no-store').json({ v: `${ro.n}:${ro.t}:${s.n}:${s.m}:${s.u}:${require('crypto').createHash('md5').update(s.d).digest('hex')}:${r.n}:${r.t}` });
+  res.set('Cache-Control', 'no-store').json({ added: s.m, v: `${ro.n}:${ro.t}:${s.n}:${s.m}:${s.u}:${require('crypto').createHash('md5').update(s.d).digest('hex')}:${r.n}:${r.t}` });
 });
 
 app.get('/leaderboard', needAuth, (req, res) => {
