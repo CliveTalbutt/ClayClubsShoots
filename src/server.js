@@ -160,7 +160,7 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
       ? db.prepare('SELECT id FROM shoots WHERE user_id = ? AND external_id = ?').get(user.id, b.externalId) : null;
     if (existing) {
       db.transaction(() => {
-        db.prepare('UPDATE shoots SET name = ?, venue = ?, shoot_date = ?, shoot_time = ?, stands = ?, targets_per_stand = ? WHERE id = ?')
+        db.prepare("UPDATE shoots SET name = ?, venue = ?, shoot_date = ?, shoot_time = ?, stands = ?, targets_per_stand = ?, updated_at = datetime('now') WHERE id = ?")
           .run(b.name.trim(), b.venue?.trim() ?? null, b.date, b.time ?? null, b.stands, tps, existing.id);
         db.prepare('DELETE FROM results WHERE shoot_id = ?').run(existing.id);
         const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score, pattern) VALUES (?,?,?,?,?)');
@@ -172,7 +172,7 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
     }
     const id = db.transaction(() => {
       const r = db.prepare(
-        'INSERT INTO shoots (user_id, external_id, name, venue, shoot_date, shoot_time, stands, targets_per_stand) VALUES (?,?,?,?,?,?,?,?)'
+        "INSERT INTO shoots (user_id, external_id, name, venue, shoot_date, shoot_time, stands, targets_per_stand, updated_at) VALUES (?,?,?,?,?,?,?,?, datetime('now'))"
       ).run(user.id, b.externalId ?? null, b.name.trim(), b.venue?.trim() ?? null, b.date, b.time ?? null, b.stands, tps);
       const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score, pattern) VALUES (?,?,?,?,?)');
       for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(r.lastInsertRowid, s.name.trim(), i + 1, sc, s.patterns?.[i] ?? null));
@@ -401,12 +401,15 @@ const escapeAttr = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;
 
 app.get('/results', needAuth, (req, res) => {
   const shoots = db.prepare(
-    'SELECT id, name, venue, shoot_date, shoot_time FROM shoots WHERE user_id = ? ORDER BY shoot_date DESC, shoot_time DESC, id DESC'
+    'SELECT id, name, venue, shoot_date, shoot_time, updated_at FROM shoots WHERE user_id = ? ORDER BY shoot_date DESC, shoot_time DESC, id DESC'
   ).all(req.session.userId);
   let shoot = null;
   let shooters = [];
-  if (req.query.shoot != null) {
-    const shootId = decodeId(req.session.userId, req.query.shoot);
+  // With no explicit choice, show whichever shoot was most recently active or updated.
+  const latest = shoots.reduce((a, s) => (!a || (s.updated_at || '') > (a.updated_at || '') || ((s.updated_at || '') === (a.updated_at || '') && s.id > a.id) ? s : a), null);
+  const chosen = req.query.shoot != null && req.query.shoot !== '' ? req.query.shoot : (latest ? encodeId(req.session.userId, latest.id) : null);
+  if (chosen != null) {
+    const shootId = decodeId(req.session.userId, chosen);
     if (shootId == null) return res.sendStatus(404);
     shoot = db.prepare('SELECT * FROM shoots WHERE id = ? AND user_id = ?').get(shootId, req.session.userId);
     if (!shoot) return res.sendStatus(404);
@@ -453,10 +456,10 @@ app.get('/results', needAuth, (req, res) => {
 // Cheap change fingerprint of this user's data, polled by public/live.js
 app.get('/live', needAuth, (req, res) => {
   const uid = req.session.userId;
-  const s = db.prepare('SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m, COALESCE(group_concat(shoot_date || COALESCE(shoot_time, \'\') || name || COALESCE(venue, \'\'), \'|\'), \'\') AS d FROM shoots WHERE user_id = ?').get(uid);
+  const s = db.prepare('SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m, COALESCE(MAX(updated_at), \'\') AS u, COALESCE(group_concat(shoot_date || COALESCE(shoot_time, \'\') || name || COALESCE(venue, \'\'), \'|\'), \'\') AS d FROM shoots WHERE user_id = ?').get(uid);
   const r = db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(r.score),0) AS t FROM results r JOIN shoots s ON s.id = r.shoot_id WHERE s.user_id = ?').get(uid);
   const ro = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(id * (1 + (kind = 'member') + 2 * (status = 'expired') + 4 * is_admin)), 0) AS t FROM roster WHERE user_id = ?").get(uid);
-  res.set('Cache-Control', 'no-store').json({ v: `${ro.n}:${ro.t}:${s.n}:${s.m}:${require('crypto').createHash('md5').update(s.d).digest('hex')}:${r.n}:${r.t}` });
+  res.set('Cache-Control', 'no-store').json({ v: `${ro.n}:${ro.t}:${s.n}:${s.m}:${s.u}:${require('crypto').createHash('md5').update(s.d).digest('hex')}:${r.n}:${r.t}` });
 });
 
 app.get('/leaderboard', needAuth, (req, res) => {

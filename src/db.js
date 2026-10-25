@@ -171,6 +171,10 @@ for (const [col, def] of [['email_verified_at', 'TEXT'], ['verify_token_hash', '
   if (!db.prepare("SELECT 1 FROM pragma_table_info('roster') WHERE name = ?").get(col)) db.exec(`ALTER TABLE roster ADD COLUMN ${col} ${def}`);
 }
 if (!db.prepare("SELECT 1 FROM pragma_table_info('results') WHERE name = 'pattern'").get()) db.exec('ALTER TABLE results ADD COLUMN pattern TEXT');
+if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'updated_at'").get()) {
+  db.exec('ALTER TABLE shoots ADD COLUMN updated_at TEXT');
+  db.exec('UPDATE shoots SET updated_at = created_at');
+}
 // Stable identity for each roster entry so renames and email changes never break links.
 if (!db.prepare("SELECT 1 FROM pragma_table_info('roster') WHERE name = 'guid'").get()) db.exec('ALTER TABLE roster ADD COLUMN guid TEXT');
 for (const r of db.prepare('SELECT id FROM roster WHERE guid IS NULL').all()) db.prepare('UPDATE roster SET guid = ? WHERE id = ?').run(require('crypto').randomUUID(), r.id);
