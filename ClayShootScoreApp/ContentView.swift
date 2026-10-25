@@ -80,7 +80,10 @@ struct ContentView: View {
 
                 statusBar
 
-                if vm.isManualMode, !vm.shooters.isEmpty, !vm.isAddingShooter, !vm.isComplete {
+                if vm.isComplete {
+                    newShootButton
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if vm.isManualMode, !vm.shooters.isEmpty, !vm.isAddingShooter {
                     manualButtons
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -266,6 +269,21 @@ struct ContentView: View {
         vm.startNewShoot()
         exportMessage = "Shoot completed: submitting results…"
         Task { await flushOutbox() }
+    }
+
+    /// Shown once every shooter has finished: makes sure the final results are queued,
+    /// clears the sheet and opens "Who is shooting?" for the next shoot.
+    private var newShootButton: some View {
+        Button {
+            completeShoot()
+            isShowingRoster = true
+        } label: {
+            Label("New Shoot", systemImage: "plus.circle.fill")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(height: isCompact ? 60 : 80)
+        }
+        .buttonStyle(.borderedProminent)
     }
 
     private var modeButton: some View {
