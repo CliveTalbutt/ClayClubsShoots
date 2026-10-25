@@ -440,7 +440,10 @@ struct ScoreTableView: View {
             vm.selectShooter(at: shooterIndex)
             if !vm.isComplete { return }
         }
-        guard !vm.isStandLocked(stand) else { return }
+        guard !vm.isStandLocked(stand) else {
+            vm.errorMessage = "Stand \(stand + 1) is complete for all shooters and can no longer be changed."
+            return
+        }
         vm.shooters[shooterIndex].scores[stand][target] = next
     }
 }
