@@ -18,16 +18,18 @@
     var misses = d.total - d.hits;
     var head = el('h3', d.shooter + ' \u2013 stand ' + d.stand);
     var sub = el('p', d.hits + ' hit' + (d.hits === 1 ? '' : 's') + ', ' + misses + ' miss' + (misses === 1 ? '' : 'es') + ' (of ' + d.total + ')', 'muted');
-    var row = el('div', null, 'clay-row');
-    var pattern = d.pattern || '1'.repeat(d.hits) + '0'.repeat(misses);
-    pattern.split('').forEach(function (c, i) {
-      var cls = c === '1' ? 'clay hit' : c === '0' ? 'clay miss' : 'clay none';
-      var chip = el('span', c === '1' ? '\u2713' : c === '0' ? '\u2717' : '\u2013', cls);
-      chip.title = 'Clay ' + (i + 1) + ': ' + (c === '1' ? 'hit' : c === '0' ? 'miss' : 'not shot');
-      row.append(chip);
-    });
-    pop.replaceChildren(head, sub, row);
-    if (!d.pattern) pop.append(el('p', 'Order of hits not recorded for this shoot.', 'muted'));
+    if (!d.pattern) {
+      pop.replaceChildren(head, sub, el('p', 'The order of hits and misses was not recorded for this shoot.', 'muted'));
+    } else {
+      var row = el('div', null, 'clay-row');
+      d.pattern.split('').forEach(function (c, i) {
+        var cls = c === '1' ? 'clay hit' : c === '0' ? 'clay miss' : 'clay none';
+        var chip = el('span', c === '1' ? '\u2713' : c === '0' ? '\u2717' : '\u2013', cls);
+        chip.title = 'Clay ' + (i + 1) + ': ' + (c === '1' ? 'hit' : c === '0' ? 'miss' : 'not shot');
+        row.append(chip);
+      });
+      pop.replaceChildren(head, sub, row);
+    }
     pop.hidden = false;
     var r = td.getBoundingClientRect();
     pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
