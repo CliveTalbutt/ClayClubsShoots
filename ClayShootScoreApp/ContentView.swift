@@ -597,7 +597,7 @@ struct ContentView: View {
 }
 
 
-/// The sync status line. On each change it lights up in the accent gold and then
+/// The sync status line. On each change it lights up in the same yellow as the score flash and then
 /// fades smoothly back to its normal grey, as a single highlight.
 private struct SyncStatusLabel: View {
     let text: String
@@ -606,7 +606,7 @@ private struct SyncStatusLabel: View {
     var body: some View {
         Text(text)
             .font(.footnote)
-            .foregroundStyle(lit ? Color.accentColor : Color.secondary)
+            .foregroundStyle(lit ? Color.yellow : Color.secondary)
             .onChange(of: text) { _, _ in
                 lit = true
                 Task {
