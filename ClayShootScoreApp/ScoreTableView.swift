@@ -433,14 +433,14 @@ struct ScoreTableView: View {
         case 0: next = -1       // cross -> not shot
         default: next = 1       // not shot -> tick
         }
-        guard !vm.isStandLocked(stand) else { return }
         // A tap on a collapsed box only moves the expanded input there; once it is
         // magnified, taps change scores as normal.
         if vm.currentShooterIndex != shooterIndex || vm.currentStand != stand || vm.isComplete {
-            if vm.currentShooterIndex != shooterIndex { vm.currentShooterIndex = shooterIndex }
             if vm.currentStand != stand { vm.currentStand = stand }
+            vm.selectShooter(at: shooterIndex)
             if !vm.isComplete { return }
         }
+        guard !vm.isStandLocked(stand) else { return }
         vm.shooters[shooterIndex].scores[stand][target] = next
     }
 }
