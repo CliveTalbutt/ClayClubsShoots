@@ -8,6 +8,7 @@ import SwiftUI
 
 struct SendToServerView: View {
     @Bindable var settings: ClayShootsSettings
+    @Bindable var vm: ShootViewModel
 
     @State private var status: String?
     @State private var statusIsError = false
@@ -33,6 +34,18 @@ struct SendToServerView: View {
                     Text("Clay Shoots server")
                 } footer: {
                     Text("Create the key on the website's Dashboard under API key.")
+                }
+
+                Section {
+                    Picker("Number of stands", selection: $vm.numberOfStands) {
+                        ForEach(ShootViewModel.standOptions, id: \.self) { count in
+                            Text("\(count)").tag(count)
+                        }
+                    }
+                } header: {
+                    Text("Shoot setup")
+                } footer: {
+                    Text("1 to 25. Remembered for \(vm.shootName).")
                 }
 
                 Section {
