@@ -69,7 +69,7 @@
         <thead><tr>
           <th scope="col" data-sort-column="0" data-sort-type="text" aria-sort="none"><button type="button" class="results-sort" data-sort-column="0">Shooter <span aria-hidden="true">↕</span></button></th>
           <% for (let i = 1; i <= shoot.stands; i++) { %>
-            <th scope="col" class="num" data-sort-column="<%= i %>" data-sort-type="number" aria-sort="none"><button type="button" class="results-sort" data-sort-column="<%= i %>"><%= i %> <span aria-hidden="true">↕</span></button></th>
+            <th scope="col" class="num"><%= i %></th>
           <% } %>
           <th scope="col" class="num" data-sort-column="<%= shoot.stands + 1 %>" data-sort-type="number" aria-sort="descending"><button type="button" class="results-sort" data-sort-column="<%= shoot.stands + 1 %>">Total / <%= shoot.stands * shoot.targets_per_stand %> <span aria-hidden="true">↓</span></button></th>
           <th scope="col" class="num" data-sort-column="<%= shoot.stands + 2 %>" data-sort-type="number" aria-sort="none"><button type="button" class="results-sort" data-sort-column="<%= shoot.stands + 2 %>">Avg % <span aria-hidden="true">↕</span></button></th>
