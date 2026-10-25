@@ -18,8 +18,8 @@ import SwiftUI
 /// the scoring moving on) their row is scrolled vertically into view, leaving the
 /// horizontal position alone so the stands being viewed stay put.
 /// Briefly flashes a cell whenever its score changes (by tap or voice).
-private struct FlashOnChange: ViewModifier {
-    let value: Int
+struct FlashOnChange<Value: Equatable>: ViewModifier {
+    let value: Value
     @State private var flashing = false
 
     func body(content: Content) -> some View {

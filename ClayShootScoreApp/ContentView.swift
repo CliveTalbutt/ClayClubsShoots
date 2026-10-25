@@ -380,7 +380,7 @@ struct ContentView: View {
                 do {
                     _ = try await client.send(body: item.body)
                     UploadOutbox.clear(id: item.id, ifBody: item.body)
-                    exportMessage = "Live: synced at \(Date.now.formatted(date: .omitted, time: .shortened))"
+                    exportMessage = "Live: synced at \(Date.now.formatted(.dateTime.hour().minute().second()))"
                 } catch ClayShootsError.invalidKey {
                     exportMessage = "Live upload stopped: the API key was rejected. Scores are kept on this phone."
                     return
@@ -577,6 +577,8 @@ struct ContentView: View {
                 Text(exportMessage)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .modifier(FlashOnChange(value: exportMessage))
             }
         }
         .frame(maxWidth: .infinity)
