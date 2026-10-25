@@ -13,6 +13,8 @@ nonisolated struct ShootUpload: Encodable, Sendable {
         let name: String
         let email: String?
         let scores: [Int]
+        /// One string per stand: "1" hit, "0" miss, "-" not shot.
+        let patterns: [String]
     }
 
     let externalId: String
@@ -250,7 +252,14 @@ extension ShootViewModel {
             let scores = (0..<numberOfStands).map { stand in
                 shooter.scores.indices.contains(stand) ? min(shooter.standTotal(stand), targets) : 0
             }
-            return .init(name: name, email: email(for: shooter.name), scores: scores)
+            let patterns = (0..<numberOfStands).map { stand -> String in
+                let row = shooter.scores.indices.contains(stand) ? shooter.scores[stand] : []
+                return String((0..<targets).map { t -> Character in
+                    let v = t < row.count ? row[t] : -1
+                    return v > 0 ? "1" : (v == 0 ? "0" : "-")
+                })
+            }
+            return .init(name: name, email: email(for: shooter.name), scores: scores, patterns: patterns)
         }
         let c = Calendar.current.dateComponents([.year, .month, .day], from: shootStart)
         let date = String(format: "%04d-%02d-%02d", c.year ?? 1970, c.month ?? 1, c.day ?? 1)
