@@ -46,8 +46,8 @@ struct ScoreTableView: View {
     private var nameWidth: CGFloat { isCompact ? 100 : 120 }
     private var tablePadding: CGFloat { isCompact ? 10 : 16 }
     private var headerFont: Font { isCompact ? .caption.weight(.semibold) : .subheadline.weight(.semibold) }
-    private let targetCellWidth: CGFloat = 14
-    private let targetCellHeight: CGFloat = 18
+    private let targetCellWidth: CGFloat = 10.5
+    private let targetCellHeight: CGFloat = 13.5
     private let targetCellSpacing: CGFloat = 1
     private let standTotalWidth: CGFloat = 22
     private let grandTotalWidth: CGFloat = 44
@@ -69,8 +69,8 @@ struct ScoreTableView: View {
     /// The current stand is widened for every shooter, and the current shooter's cells on it are
     /// taller and larger still, so entries are easy to see and tap. Both shrink back when the
     /// shooter or stand changes.
-    private let expandedCellWidth: CGFloat = 30
-    private let expandedCellHeight: CGFloat = 44
+    private let expandedCellWidth: CGFloat = 24
+    private let expandedCellHeight: CGFloat = 35
 
     private func isCurrentStand(_ stand: Int) -> Bool { stand == vm.currentStand && !vm.isComplete }
     private func cellWidth(for stand: Int) -> CGFloat { isCurrentStand(stand) ? expandedCellWidth : targetCellWidth }
@@ -385,6 +385,9 @@ struct ScoreTableView: View {
         default: next = 1       // not shot -> tick
         }
         guard !vm.isStandLocked(stand) else { return }
+        // Entering a score in another box moves the expanded input there.
+        if vm.currentShooterIndex != shooterIndex { vm.currentShooterIndex = shooterIndex }
+        if vm.currentStand != stand { vm.currentStand = stand }
         vm.shooters[shooterIndex].scores[stand][target] = next
     }
 }
