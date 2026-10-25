@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var exportMessage: String?
     @State private var isShowingHelp = false
     @State private var isConfirmingComplete = false
+    @State private var isConfirmingNewShoot = false
     @State private var isShowingSettings = false
     @State private var isShowingRoster = false
     @State private var serverSettings = ClayShootsSettings()
@@ -132,6 +133,18 @@ struct ContentView: View {
             // the navigation bar is left without a title to save vertical space.
             .navigationTitle(isCompact ? "" : vm.title)
             .toolbarTitleDisplayMode(isCompact ? .inline : .automatic)
+            .confirmationDialog("Start a new shoot?", isPresented: $isConfirmingNewShoot, titleVisibility: .visible) {
+                if !vm.shooters.isEmpty {
+                    Button("Submit results, then new shoot") { completeShoot(); isShowingRoster = true }
+                }
+                Button(vm.shooters.isEmpty ? "New shoot" : "Discard this shoot and start new", role: vm.shooters.isEmpty ? nil : .destructive) {
+                    vm.startNewShoot()
+                    isShowingRoster = true
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(vm.shooters.isEmpty ? "Choose who is shooting." : "Submitting counts any unscored targets as misses. Discarding clears the scoresheet; anything already synced stays on the server as an unfinished shoot.")
+            }
             .confirmationDialog("Complete this shoot?", isPresented: $isConfirmingComplete, titleVisibility: .visible) {
                 Button("Complete and submit results") { completeShoot() }
                 Button("Cancel", role: .cancel) {}
@@ -207,6 +220,10 @@ struct ContentView: View {
 
         ToolbarSpacer(.fixed)
 
+        ToolbarItem { newShootToolbarButton.help("Start a new shoot") }
+
+        ToolbarSpacer(.fixed)
+
         ToolbarItem {
             Button {
                 isShowingHelp.toggle()
@@ -247,7 +264,16 @@ struct ContentView: View {
             } label: {
                 Label("Voice Commands", systemImage: "questionmark.circle")
             }
+            newShootToolbarButton
             completeShootButton
+        }
+    }
+
+    private var newShootToolbarButton: some View {
+        Button {
+            isConfirmingNewShoot = true
+        } label: {
+            Label("New Shoot", systemImage: "plus.circle")
         }
     }
 
