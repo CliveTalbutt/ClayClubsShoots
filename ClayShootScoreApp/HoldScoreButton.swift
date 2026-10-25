@@ -7,7 +7,7 @@ struct HoldScoreButton: View {
     let title: String
     let color: Color
     let systemImage: String
-    var holdTime: Double = 0.6
+    var holdTime: Double = 0.3
     let action: () -> Void
 
     @State private var isPressing = false
