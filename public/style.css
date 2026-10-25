@@ -74,6 +74,9 @@ footer{text-align:center;color:var(--muted);padding:24px}
 .nav-menu-right .nav-sub{left:auto;right:0}
 .nav-sub a{display:block;padding:8px 10px;border-radius:6px}
 .nav-sub a:hover,.nav-sub a:focus{background:var(--card)}
+.nav-sub form{margin:0;border-top:1px solid var(--line);margin-top:4px;padding-top:4px}
+.nav-signout{display:block;width:100%;text-align:left;background:none;border:0;color:var(--text);font:inherit;padding:8px 10px;border-radius:6px;cursor:pointer}
+.nav-signout:hover,.nav-signout:focus{background:var(--card)}
 .nav-menu:hover .nav-sub,.nav-menu:focus-within .nav-sub{display:block}
 @media (hover:none){.nav-menu{display:flex;gap:16px;flex-wrap:wrap}.nav-sub{display:flex;position:static;gap:16px;background:none;border:0;padding:0;box-shadow:none;min-width:0}.nav-sub a{padding:0}}
 .cpsa-hint{cursor:help}
