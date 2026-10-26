@@ -12,10 +12,14 @@ if (!inMemory) db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
 db.exec(`
+CREATE TABLE IF NOT EXISTS clubs (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE
+);
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
-  club_name TEXT NOT NULL,
+  club_id INTEGER REFERENCES clubs(id),
   password_hash TEXT NOT NULL,
   totp_secret TEXT,
   api_key_hash TEXT UNIQUE,
@@ -77,11 +81,34 @@ CREATE TABLE IF NOT EXISTS pay_links (
 );
 `);
 
+// Club names live in `clubs`; a login (users row) points at its club by id. Older databases are
+// migrated here: names are extracted into clubs, users.club_id is filled in and club_name dropped.
+db.exec('DROP VIEW IF EXISTS users_v');
+if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'club_id'").get()) {
+  db.exec('ALTER TABLE users ADD COLUMN club_id INTEGER REFERENCES clubs(id)');
+}
+if (db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'club_name'").get()) {
+  db.transaction(() => {
+    db.exec('INSERT OR IGNORE INTO clubs (name) SELECT DISTINCT trim(club_name) FROM users ORDER BY club_name');
+    db.exec('UPDATE users SET club_id = (SELECT c.id FROM clubs c WHERE c.name = trim(users.club_name))');
+    db.exec('ALTER TABLE users DROP COLUMN club_name');
+  })();
+}
+db.exec('CREATE INDEX IF NOT EXISTS users_club ON users(club_id)');
+// Finds a club by name (any letter case), creating it if new.
+db.clubId = (name) => {
+  const n = String(name).trim();
+  db.prepare('INSERT OR IGNORE INTO clubs (name) VALUES (?)').run(n);
+  return db.prepare('SELECT id FROM clubs WHERE name = ?').get(n).id;
+};
+// A login together with its club's name, for code that reads user.club_name.
+db.exec('CREATE VIEW users_v AS SELECT u.*, c.name AS club_name FROM users u JOIN clubs c ON c.id = u.club_id');
+
 if (inMemory && process.env.SEED_EXAMPLE_DATA === '1') {
   const password = crypto.randomBytes(18).toString('hex');
   const userId = db.prepare(
-    'INSERT INTO users (email, club_name, password_hash) VALUES (?, ?, ?)'
-  ).run('sample@clayshoots.local', 'Sample Clay Club', bcrypt.hashSync(password, 12)).lastInsertRowid;
+    'INSERT INTO users (email, club_id, password_hash) VALUES (?, ?, ?)'
+  ).run('sample@clayshoots.local', db.clubId('Sample Clay Club'), bcrypt.hashSync(password, 12)).lastInsertRowid;
   const shoots = [
     { name: 'Summer League Round 1', venue: 'Green Valley', date: '2026-06-07' },
     { name: 'Riverside Open', venue: 'Riverside Grounds', date: '2026-06-21' },

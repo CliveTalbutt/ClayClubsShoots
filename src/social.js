@@ -138,7 +138,7 @@ module.exports = function createSocial({ db, encrypt, decrypt, needAuth, wrap })
   function buildMessage(userId, shootId) {
     const shoot = db.prepare('SELECT * FROM shoots WHERE id = ? AND user_id = ?').get(shootId, userId);
     if (!shoot) return null;
-    const club = db.prepare('SELECT club_name FROM users WHERE id = ?').get(userId)?.club_name;
+    const club = db.prepare('SELECT club_name FROM users_v WHERE id = ?').get(userId)?.club_name;
     const rows = db.prepare('SELECT shooter, SUM(score) AS total, COUNT(*) AS stands FROM results WHERE shoot_id = ? GROUP BY shooter').all(shootId)
       .sort((a, b) => b.total - a.total || a.shooter.localeCompare(b.shooter));
     const lines = rows.slice(0, 10).map((r) => {

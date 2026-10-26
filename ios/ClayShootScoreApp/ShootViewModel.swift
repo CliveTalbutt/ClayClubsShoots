@@ -499,6 +499,10 @@ class ShootViewModel {
             if isManualMode {
                 cancelPendingScores()
                 processedWordCount = latestWordCount
+                // Manual scoring switches speech recognition off, unless a name is being taken.
+                if !isAddingShooter, isListening || isStartingSession { stopListening() }
+            } else {
+                resumeListening()
             }
         }
     }
@@ -782,6 +786,10 @@ class ShootViewModel {
         if !name.isEmpty {
             addShooter(named: name)
         }
+        if isManualMode {
+            stopListening()
+            return
+        }
         // The microphone stays on; only the vocabulary changes back to scoring.
         startListening(mode: .scoring)
     }
@@ -1004,7 +1012,7 @@ class ShootViewModel {
     }
 
     private func startListening(mode: ListeningMode) {
-        guard voiceAllowed, !isStartingSession, !isInBackground else { return }
+        guard voiceAllowed, !isStartingSession, !isInBackground, !isManualMode || mode == .addingShooter else { return }
         retryTask?.cancel()
         retryTask = nil
         // Scoring always has a current shooter; default to the first on the list.

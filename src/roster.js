@@ -66,7 +66,7 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
       return { ok: false, message: `A verification email was sent less than ${RESEND_MINUTES} minutes ago.` };
     }
     const token = crypto.randomBytes(32).toString('hex');
-    const club = db.prepare('SELECT club_name FROM users WHERE id = ?').get(userId)?.club_name || 'Clay Shoots';
+    const club = db.prepare('SELECT club_name FROM users_v WHERE id = ?').get(userId)?.club_name || 'Clay Shoots';
     const link = `${baseUrl}/verify-email/${token}`;
     try {
       await mailer.sendRaw(r.email, {

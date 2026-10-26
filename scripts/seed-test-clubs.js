@@ -30,7 +30,7 @@ const clubs = [
 ];
 const shootNames = ['Spring Open', 'Summer League', 'Bank Holiday Sporting', 'Club Championship', 'Autumn Cup', 'Twilight Shoot', 'Charity Sporting'];
 
-const insUser = db.prepare('INSERT INTO users (email, club_name, password_hash, is_super) VALUES (?,?,?,?)');
+const insUser = db.prepare('INSERT INTO users (email, club_id, password_hash, is_super) VALUES (?,?,?,?)');
 const insRoster = db.prepare('INSERT INTO roster (user_id, name, name_key, email, kind, status, is_admin, guid) VALUES (?,?,?,?,?,?,?,?)');
 const insShoot = db.prepare('INSERT INTO shoots (user_id, external_id, name, venue, shoot_date, stands, targets_per_stand) VALUES (?,?,?,?,?,?,?)');
 const insResult = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score) VALUES (?,?,?,?)');
@@ -101,12 +101,12 @@ const scenarios = {
   'Downland Sporting': ['none', null, 'no subscription (new sign-up, pay with the dummy card)'],
 };
 for (const [club, [status, end]] of Object.entries(scenarios)) {
-  db.prepare('UPDATE users SET sub_status = ?, sub_period_end = ? WHERE club_name = ? AND is_super = 0').run(status, end, club);
+  db.prepare('UPDATE users SET sub_status = ?, sub_period_end = ? WHERE club_id = (SELECT id FROM clubs WHERE name = ?) AND is_super = 0').run(status, end, club);
 }
 // Paid-for allowance (members, guests). Brookfield is exactly full so the limit can be tried.
 const allowances = { 'Ashdown Clay Club': [12, 6], 'Brookfield Shooting School': [6, 2], 'Coppice Gun Club': [8, 4], 'Downland Sporting': [10, 4] };
 for (const [club, [m, g]] of Object.entries(allowances)) {
-  db.prepare('UPDATE users SET est_members = ?, est_guests = ?, req_members = NULL, req_guests = NULL WHERE club_name = ? AND is_super = 0').run(m, g, club);
+  db.prepare('UPDATE users SET est_members = ?, est_guests = ?, req_members = NULL, req_guests = NULL WHERE club_id = (SELECT id FROM clubs WHERE name = ?) AND is_super = 0').run(m, g, club);
 }
 console.log('Subscriptions:');
 for (const [club, [, , text]] of Object.entries(scenarios)) console.log(`  ${club}: ${text}; allowance ${allowances[club][0]} members, ${allowances[club][1]} guests`);

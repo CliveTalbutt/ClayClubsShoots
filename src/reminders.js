@@ -83,7 +83,7 @@ module.exports = function createReminders({ db, mailer, baseUrl }) {
 
   // Checks every club account once. Safe to run as often as you like.
   async function sweep() {
-    const rows = db.prepare("SELECT * FROM users WHERE is_super = 0 AND sub_period_end IS NOT NULL AND sub_status IN ('active', 'trialing', 'canceled', 'past_due', 'expired')").all();
+    const rows = db.prepare("SELECT * FROM users_v WHERE is_super = 0 AND sub_period_end IS NOT NULL AND sub_status IN ('active', 'trialing', 'canceled', 'past_due', 'expired')").all();
     let sent = 0;
     for (const u of rows) {
       const kind = dueKind(u.sub_period_end);
@@ -95,7 +95,7 @@ module.exports = function createReminders({ db, mailer, baseUrl }) {
 
   // Super admin "send now": always sends, regardless of schedule.
   async function sendNow(userId) {
-    const u = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+    const u = db.prepare('SELECT * FROM users_v WHERE id = ?').get(userId);
     if (!u) return 'unknown account';
     const end = u.sub_period_end || 0;
     const kind = end ? (dueKind(end) || 'manual') : 'manual';

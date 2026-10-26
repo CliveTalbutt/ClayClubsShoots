@@ -45,7 +45,7 @@ async function http(method, url, { headers = {}, json, form } = {}) {
 module.exports = function createPayments({ db, baseUrl, needAuth, wrap }) {
   const now = () => Math.floor(Date.now() / 1000);
   const addMonths = (sec, m) => { const d = new Date(sec * 1000); d.setMonth(d.getMonth() + m); return Math.floor(d.getTime() / 1000); };
-  const userById = (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  const userById = (id) => db.prepare('SELECT * FROM users_v WHERE id = ?').get(id);
   const allowance = allowanceLib(db);
   const sizeOf = (u) => {
     const c = allowance.counts(u.id);

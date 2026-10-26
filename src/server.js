@@ -102,8 +102,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS device_keys (
 // A club's main key or any per-device key issued to one of its members.
 const userByKey = (key) => {
   const h = hashKey(key);
-  return db.prepare('SELECT * FROM users WHERE api_key_hash = ?').get(h)
-    || db.prepare('SELECT u.* FROM device_keys d JOIN users u ON u.id = d.user_id WHERE d.key_hash = ?').get(h);
+  return db.prepare('SELECT * FROM users_v WHERE api_key_hash = ?').get(h)
+    || db.prepare('SELECT u.* FROM device_keys d JOIN users_v u ON u.id = d.user_id WHERE d.key_hash = ?').get(h);
 };
 // TESTING ONLY: identify a member by email alone, list their clubs, and issue a per-device key.
 // Anyone who knows a member's email can do this, so it is off unless ALLOW_EMAIL_ONLY_LOGIN=1 and never in production.
@@ -112,7 +112,7 @@ const loginLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeade
 function memberClubs(email) {
   const rows = db.prepare(`SELECT u.id, u.club_name,
       (SELECT COUNT(*) FROM shoots s WHERE s.user_id = u.id) AS shoots
-    FROM roster r JOIN users u ON u.id = r.user_id
+    FROM roster r JOIN users_v u ON u.id = r.user_id
     WHERE lower(r.email) = ? AND r.kind = 'member' AND r.status = 'current' AND u.is_super = 0`).all(email);
   const best = new Map();
   for (const r of rows) { const c = best.get(r.club_name); if (!c || r.shoots > c.shoots) best.set(r.club_name, r); }
@@ -409,7 +409,7 @@ app.use((req, res, next) => {
   if (!req.session.csrf) req.session.csrf = crypto.randomBytes(24).toString('hex');
   res.locals.csrf = req.session.csrf;
   res.locals.user = req.session.userId
-    ? db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId) : null;
+    ? db.prepare('SELECT * FROM users_v WHERE id = ?').get(req.session.userId) : null;
   res.locals.active = isActive(res.locals.user);
   // The most recently active shoot is shown in the header.
   res.locals.currentShoot = res.locals.user
@@ -425,7 +425,7 @@ app.use((req, res, next) => {
   }
   // A super admin can open any club account; session.superId remembers who they really are.
   const realId = req.session.superId || req.session.userId;
-  const real = realId ? (realId === req.session.userId ? res.locals.user : db.prepare('SELECT * FROM users WHERE id = ?').get(realId)) : null;
+  const real = realId ? (realId === req.session.userId ? res.locals.user : db.prepare('SELECT * FROM users_v WHERE id = ?').get(realId)) : null;
   res.locals.realSuper = !!(real && real.is_super === 1);
   res.locals.acting = !!(req.session.superId && res.locals.realSuper);
   if (req.session.superId && !res.locals.realSuper) { delete req.session.superId; }
@@ -462,7 +462,7 @@ app.post('/register', authLimiter, wrap(async (req, res) => {
   else if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) error = 'Could not create account with those details.';
   if (error) return res.status(400).render('register', { error, form: req.body });
   const hash = await bcrypt.hash(pw, 12);
-  const r = db.prepare('INSERT INTO users (email, club_name, password_hash, est_members, est_guests) VALUES (?,?,?,?,?)').run(email, club, hash, estMembers, estGuests);
+  const r = db.prepare('INSERT INTO users (email, club_id, password_hash, est_members, est_guests) VALUES (?,?,?,?,?)').run(email, db.clubId(club), hash, estMembers, estGuests);
   await regenerate(req);
   req.session.pending = { userId: r.lastInsertRowid, setup: true };
   res.redirect('/2fa/setup');
@@ -471,7 +471,7 @@ app.post('/register', authLimiter, wrap(async (req, res) => {
 app.get('/login', (req, res) => res.render('login'));
 app.post('/login', authLimiter, wrap(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
-  const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  const u = db.prepare('SELECT * FROM users_v WHERE email = ?').get(email);
   const dummy = '$2a$12$C6UzMDM.H6dfI/f/IKcEeO5pH3m6V1b3r3o8w4x7kYH2m0T1wZb1e';
   const ok = await bcrypt.compare(String(req.body.password || ''), u ? u.password_hash : dummy);
   if (!u || !ok) return res.status(401).render('login', { error: 'Invalid email or password.' });
@@ -500,7 +500,7 @@ app.post('/2fa/setup', authLimiter, wrap(async (req, res) => {
   db.prepare('UPDATE users SET totp_secret = ? WHERE id = ?').run(encrypt(req.session.tempSecret), p.userId);
   await regenerate(req);
   req.session.userId = p.userId;
-  const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(p.userId);
+  const fresh = db.prepare('SELECT * FROM users_v WHERE id = ?').get(p.userId);
   res.redirect(isActive(fresh) ? '/dashboard' : '/dashboard?pay=welcome');
 }));
 
@@ -508,7 +508,7 @@ app.get('/2fa/verify', (req, res) => (req.session.pending && !req.session.pendin
 app.post('/2fa/verify', authLimiter, wrap(async (req, res) => {
   const p = req.session.pending;
   if (!p || p.setup) return res.redirect('/login');
-  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(p.userId);
+  const u = db.prepare('SELECT * FROM users_v WHERE id = ?').get(p.userId);
   const code = String(req.body.code || '').replace(/\s/g, '');
   if (!u || !authenticator.check(code, decrypt(u.totp_secret))) return res.status(401).render('2fa-verify', { error: 'Incorrect code.' });
   await regenerate(req);
@@ -557,7 +557,7 @@ app.get('/admin/clubs', needAuth, needRealSuper, (req, res) => {
       (SELECT COUNT(DISTINCT shooter) FROM results x JOIN shoots s ON s.id = x.shoot_id WHERE s.user_id = u.id) AS shooters,
       (SELECT kind FROM roster r WHERE r.user_id = u.id AND lower(r.email) = lower(u.email) AND r.status = 'current' LIMIT 1) AS rkind,
       (SELECT is_admin FROM roster r WHERE r.user_id = u.id AND lower(r.email) = lower(u.email) AND r.status = 'current' LIMIT 1) AS radmin,
-      u.club_name FROM users u ORDER BY u.club_name COLLATE NOCASE, u.email`).all();
+      u.club_name FROM users_v u ORDER BY u.club_name COLLATE NOCASE, u.email`).all();
   const clubs = new Map();
   for (const a of accounts) {
     a.role = a.is_super === 1 ? 'Super admin' : (a.rkind === 'member' && a.radmin !== 1 ? 'Member' : 'Admin');
@@ -592,7 +592,7 @@ app.post('/admin/clubs/open', needAuth, needRealSuper, (req, res) => {
 });
 app.post('/admin/clubs/subscription', needAuth, needRealSuper, wrap(async (req, res) => {
   const id = Number(req.body.id);
-  const u = Number.isInteger(id) && db.prepare('SELECT * FROM users WHERE id = ? AND is_super = 0').get(id);
+  const u = Number.isInteger(id) && db.prepare('SELECT * FROM users_v WHERE id = ? AND is_super = 0').get(id);
   if (!u) return res.redirect('/admin/clubs');
   const nowSec = Math.floor(Date.now() / 1000);
   const action = String(req.body.action || '');
@@ -649,7 +649,7 @@ app.post('/account', needAuth, authLimiter, wrap(async (req, res) => {
     return res.status(400).render('account', { msg: null, error, form: { email, club_name: club }, acct: u, ...(await accountData(u)) });
   }
   try {
-    db.prepare('UPDATE users SET email = ?, club_name = ? WHERE id = ?').run(email, club, u.id);
+    db.prepare('UPDATE users SET email = ?, club_id = ? WHERE id = ?').run(email, db.clubId(club), u.id);
   } catch (e) {
     if (!/UNIQUE/.test(e.message)) throw e;
     return res.status(400).render('account', { msg: null, error: 'That email address cannot be used.', form: { email, club_name: club }, acct: u, ...(await accountData(u)) });
@@ -848,7 +848,7 @@ app.use('/billing', payments.billing);
 app.use('/social', social.router);
 app.get('/verify-email/:token', rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: true, legacyHeaders: false }), (req, res) => {
   const r = roster.verifyToken(req.params.token);
-  res.status(r ? 200 : 400).render('verify', { ok: !!r, name: r ? r.name : null, club: r ? db.prepare('SELECT club_name FROM users WHERE id = ?').get(r.user_id)?.club_name : null });
+  res.status(r ? 200 : 400).render('verify', { ok: !!r, name: r ? r.name : null, club: r ? db.prepare('SELECT club_name FROM users_v WHERE id = ?').get(r.user_id)?.club_name : null });
 });
 app.use('/shooters/roster', roster.router);
 app.use('/shooters', needAuth, (req, res, next) => { res.locals.roster = roster.listAll(req.session.userId); res.locals.allowance = payments.allowanceInfo(res.locals.user); next(); }, mailer.router);

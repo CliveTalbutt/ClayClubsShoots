@@ -58,7 +58,7 @@ module.exports = function createMailer({ db, classify, needAuth, wrap }) {
     return {
       shoot, name, total, possible, tps, place, field: board.length, board: board.slice(0, 3), stands: mine,
       pct: (100 * total) / possible, prevPct: pct(recentOthers), prevCount: recentOthers.length,
-      cpsa: classify(avg), club: db.prepare('SELECT club_name FROM users WHERE id = ?').get(userId)?.club_name || 'Clay Shoots',
+      cpsa: classify(avg), club: db.prepare('SELECT club_name FROM users_v WHERE id = ?').get(userId)?.club_name || 'Clay Shoots',
     };
   }
 
@@ -153,7 +153,7 @@ ${notes.map((n) => `<p>${esc(n)}</p>`).join('')}
       name, shoots, allPct: pct(shoots), last12Pct: pct(last12), wins: shoots.filter((s) => s.place === 1).length,
       best: shoots.reduce((a, b) => (b.pct > a.pct ? b : a)),
       cpsa: classify({ last12: { avgPct: pct(last12) }, allTime: { avgPct: pct(shoots) } }),
-      club: db.prepare('SELECT club_name FROM users WHERE id = ?').get(userId)?.club_name || 'Clay Shoots',
+      club: db.prepare('SELECT club_name FROM users_v WHERE id = ?').get(userId)?.club_name || 'Clay Shoots',
     };
   }
 

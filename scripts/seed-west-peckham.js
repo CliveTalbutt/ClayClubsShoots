@@ -4,7 +4,7 @@ const path = require('path');
 const db = new Database(path.join(__dirname, '..', 'data', 'app.db'));
 db.pragma('foreign_keys = ON');
 
-const user = db.prepare('SELECT id FROM users WHERE club_name = ?').get('West Peckham Gun Club');
+const user = db.prepare('SELECT id FROM users_v WHERE club_name = ?').get('West Peckham Gun Club');
 if (!user) { console.error('No user with club_name "West Peckham Gun Club" found.'); process.exit(1); }
 
 const shooters = ['Alex Morgan', 'Jamie Taylor', 'Casey Patel', 'Robin Clarke', 'Sam Hughes', 'Chris Bennett'];

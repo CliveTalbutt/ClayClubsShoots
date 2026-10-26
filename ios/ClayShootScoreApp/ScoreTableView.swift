@@ -99,7 +99,7 @@ struct ScoreTableView: View {
     private var pinnedNames: some View {
         let width = tablePadding + nameWidth + 6
         return ZStack(alignment: .topLeading) {
-            Rectangle().fill(.background.secondary)
+            Rectangle().fill(.background)
             HStack {
                 Text("Shooter")
                 Spacer()
