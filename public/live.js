@@ -6,7 +6,7 @@ if (watched.some((p) => location.pathname.startsWith(p))) {
   let lastAdded = null;
   const busy = () => {
     const a = document.activeElement;
-    return a && (a.matches('input, textarea') || a.isContentEditable);
+    return a && (a.matches('input, textarea') || a.isContentEditable || !!a.closest('.shoot-picker'));
   };
   // Keep the shoot dropdown current in place, even while it is open or focused.
   const refreshDropdown = async () => {

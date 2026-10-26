@@ -307,6 +307,42 @@ app.get('/api/v1/handicaps', pollLimiter, (req, res) => {
   });
 });
 
+// Finished shoots, newest first, for the app's "previous shoots" list.
+app.get('/api/v1/shoots/history', pollLimiter, (req, res) => {
+  const user = apiUser(req, res);
+  if (!user) return;
+  const rows = db.prepare(`SELECT s.external_id AS id, s.name, s.venue, s.shoot_date AS date, s.stands, s.is_handicap AS handicap,
+      (SELECT COUNT(DISTINCT r.shooter) FROM results r WHERE r.shoot_id = s.id) AS shooters
+    FROM shoots s WHERE s.user_id = ? AND s.complete = 1 AND s.external_id IS NOT NULL
+      AND EXISTS (SELECT 1 FROM results r WHERE r.shoot_id = s.id)
+    ORDER BY s.shoot_date DESC, s.id DESC LIMIT 60`).all(user.id);
+  res.set('Cache-Control', 'no-store').json({ shoots: rows.map((r) => ({ ...r, handicap: r.handicap === 1 })) });
+});
+
+// One finished shoot with every shooter's stand scores and finishing place.
+app.get('/api/v1/shoots/history/:externalId', pollLimiter, (req, res) => {
+  const user = apiUser(req, res);
+  if (!user) return;
+  const shoot = db.prepare('SELECT * FROM shoots WHERE user_id = ? AND external_id = ?').get(user.id, String(req.params.externalId));
+  if (!shoot) return res.status(404).json({ error: 'not_found' });
+  const hcaps = new Map(db.prepare('SELECT shooter, handicap FROM shoot_handicaps WHERE shoot_id = ?').all(shoot.id).map((h) => [h.shooter, h.handicap]));
+  const by = new Map();
+  for (const r of db.prepare('SELECT shooter, stand, score, pattern FROM results WHERE shoot_id = ? ORDER BY rowid').all(shoot.id)) {
+    if (!by.has(r.shooter)) by.set(r.shooter, { name: r.shooter, total: 0, scores: Array(shoot.stands).fill(0) });
+    const e = by.get(r.shooter);
+    e.total += r.score;
+    if (r.stand >= 1 && r.stand <= shoot.stands) e.scores[r.stand - 1] = r.score;
+  }
+  const list = [...by.values()].map((e) => {
+    const handicap = shoot.is_handicap ? (hcaps.get(e.name) ?? 0) : 0;
+    return { ...e, handicap, net: e.total - handicap };
+  }).sort((a, b) => b.net - a.net || a.name.localeCompare(b.name));
+  let place = 0;
+  list.forEach((e, i) => { if (i === 0 || e.net !== list[i - 1].net) place = i + 1; e.place = place; });
+  res.set('Cache-Control', 'no-store').json({ id: shoot.external_id, name: shoot.name, venue: shoot.venue, date: shoot.shoot_date,
+    stands: shoot.stands, handicap: shoot.is_handicap === 1, shooters: list });
+});
+
 // The club's current shoot: the newest one still being scored. Apps load it at startup and
 // poll it so several devices can score different stands of the same shoot.
 app.get('/api/v1/shoots/current', pollLimiter, (req, res) => {
@@ -727,9 +763,10 @@ app.get('/leaderboard', needAuth, (req, res) => {
       FROM results r JOIN shoots s ON s.id = r.shoot_id
       WHERE s.user_id = ? AND s.shoot_date >= ? GROUP BY r.shooter, s.id)
     GROUP BY shooter`).all(req.session.userId, cutoffDate);
+  const totalShoots = db.prepare('SELECT COUNT(DISTINCT s.id) AS n FROM shoots s JOIN results r ON r.shoot_id = s.id WHERE s.user_id = ? AND s.shoot_date >= ?').get(req.session.userId, cutoffDate).n;
   const board = rows.map((r) => {
     const avgPct = (100 * r.hits) / r.possible;
-    return { name: r.shooter, shoots: r.shoots, hits: r.hits, avgPct, cpsa: classify({ last12: { avgPct }, allTime: { avgPct } }) };
+    return { name: r.shooter, shoots: r.shoots, attendPct: totalShoots ? (100 * r.shoots) / totalShoots : 0, hits: r.hits, avgPct, cpsa: classify({ last12: { avgPct }, allTime: { avgPct } }) };
   }).sort((a, b) => b.avgPct - a.avgPct || b.shoots - a.shoots || a.name.localeCompare(b.name));
   board.forEach((s) => { s.place = 1 + board.filter((o) => o.avgPct > s.avgPct).length; });
   res.render('leaderboard', { board, since: cutoffDate });
@@ -752,13 +789,18 @@ app.get('/shoots/:token', needAuth, (req, res) => {
   res.render('shoot', { shoot, shooters, lockedStands: JSON.parse(shoot.locked_stands || '[]'), sort, max: shoot.stands * shoot.targets_per_stand });
 });
 
-app.post('/shoots/:token/delete', needAuth, (req, res) => {
+const needShootAdmin = (req, res, next) => {
+  if (res.locals.user && (res.locals.user.is_super === 1 || res.locals.userRole === 'Admin')) return next();
+  res.status(403).send('Only admins can delete shoots.');
+};
+
+app.post('/shoots/:token/delete', needAuth, needShootAdmin, (req, res) => {
   const shootId = decodeId(req.session.userId, req.params.token);
   if (shootId != null) db.prepare('DELETE FROM shoots WHERE id = ? AND user_id = ?').run(shootId, req.session.userId);
   res.redirect(['/results', '/dashboard'].includes(req.body.from) ? req.body.from : '/dashboard');
 });
 
-app.post('/shoots/delete-selected', needAuth, (req, res) => {
+app.post('/shoots/delete-selected', needAuth, needShootAdmin, (req, res) => {
   const raw = [].concat(req.body.ids || []).slice(0, 500);
   const del = db.prepare('DELETE FROM shoots WHERE id = ? AND user_id = ?');
   db.transaction(() => {

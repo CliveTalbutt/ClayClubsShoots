@@ -12,12 +12,12 @@
   <% if (user) { %><span class="nav-user" title="<%= user.email %>"><% if (currentShoot) { %><span class="nav-shoot" title="Current shoot"><%= currentShoot %></span> &middot; <% } %><%= user.email %> <span class="role-badge"><%= userRole %></span></span><% } %>
   <nav>
     <% if (user) { %>
+      <% if (realSuper) { %><a href="/admin/clubs">Shoot clubs</a><% } %>
       <div class="nav-menu">
         <a href="/dashboard">Dashboard &#9662;</a>
         <div class="nav-sub">
           <a href="/results">Results</a>
           <a href="/leaderboard">Leaderboard</a>
-          <% if (realSuper) { %><a href="/admin/clubs">Shoot clubs</a><% } %>
         </div>
       </div>
       <div class="nav-menu nav-menu-right">

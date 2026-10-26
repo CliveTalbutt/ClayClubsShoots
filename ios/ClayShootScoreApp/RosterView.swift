@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 /// Lists the club's registered shooters from the website with a checkbox each.
@@ -10,6 +11,8 @@ struct RosterView: View {
 
     @State private var roster: [RosterShooter] = RosterView.cached()
     @State private var ticked: Set<Int> = []
+    /// The order names were ticked in, which becomes the shooting order.
+    @State private var tickOrder: [Int] = []
     @State private var isLoading = false
     @State private var message: String?
     @State private var newName = ""
@@ -36,6 +39,36 @@ struct RosterView: View {
         !ClayShootsNameCleaner.clean(newName).isEmpty && (newEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? !newIsMember : Self.isValidEmail(newEmail)) && !isAdding
     }
 
+    private var voicePicker: some View {
+        let choices = Speaker.voiceChoices()
+        return Picker("Announcer voice", selection: $vm.voiceID) {
+            Text("Default (British)").tag("")
+            if !choices.female.isEmpty {
+                Section("Female") {
+                    ForEach(choices.female, id: \.identifier) { Text("\($0.name) (\(Self.accent($0.language)))").tag($0.identifier) }
+                }
+            }
+            if !choices.male.isEmpty {
+                Section("Male") {
+                    ForEach(choices.male, id: \.identifier) { Text("\($0.name) (\(Self.accent($0.language)))").tag($0.identifier) }
+                }
+            }
+        }
+        .onChange(of: vm.voiceID) { _, _ in vm.previewVoice() }
+    }
+
+    private static func accent(_ language: String) -> String {
+        switch language {
+        case "en-GB": "British"
+        case "en-US": "American"
+        case "en-AU": "Australian"
+        case "en-IE": "Irish"
+        case "en-ZA": "South African"
+        case "en-IN": "Indian"
+        default: language
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -57,7 +90,14 @@ struct RosterView: View {
                         ForEach(ShootViewModel.standOptions, id: \.self) { Text("\($0)").tag($0) }
                     }
                     .disabled(vm.isStarted)
-                    Toggle("Enthusiastic feedback", isOn: $vm.isEnthusiastic)
+                    Picker("Shooting order", selection: $vm.shootOrder) {
+                        ForEach(ShootViewModel.ShootOrder.allCases) { Text($0.title).tag($0) }
+                    }
+                    .disabled(vm.isStarted)
+                    Picker("Spoken feedback", selection: $vm.feedbackStyle) {
+                        ForEach(ShootViewModel.FeedbackStyle.allCases) { Text($0.title).tag($0) }
+                    }
+                    voicePicker
                     Toggle("Handicap shoot", isOn: $vm.isHandicapShoot)
                         .disabled(vm.isStarted)
                     if vm.isHandicapShoot {
@@ -78,7 +118,13 @@ struct RosterView: View {
                     }
                     ForEach(roster) { entry in
                         Button {
-                            if ticked.contains(entry.id) { ticked.remove(entry.id) } else { ticked.insert(entry.id) }
+                            if ticked.contains(entry.id) {
+                                ticked.remove(entry.id)
+                                tickOrder.removeAll { $0 == entry.id }
+                            } else {
+                                ticked.insert(entry.id)
+                                tickOrder.append(entry.id)
+                            }
                         } label: {
                             HStack {
                                 Image(systemName: ticked.contains(entry.id) ? "checkmark.square.fill" : "square")
@@ -143,7 +189,8 @@ struct RosterView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start Shoot") {
-                        vm.applyRoster(roster.filter { ticked.contains($0.id) })
+                        vm.applyRoster(tickOrder.compactMap { id in roster.first { $0.id == id } })
+                        vm.applyShootOrder()
                         dismiss()
                         Task { await vm.beginShoot(client: settings.client) }
                     }
@@ -154,9 +201,11 @@ struct RosterView: View {
             }
             .refreshable { await load() }
             .task {
-                ticked = Set(roster.filter { entry in
-                    vm.shooters.contains { $0.name.lowercased() == entry.name.lowercased() }
-                }.map(\.id))
+                // Anyone already in the shoot keeps their place in the shooting order.
+                tickOrder = vm.shooters.compactMap { shooter in
+                    roster.first { $0.name.lowercased() == shooter.name.lowercased() }?.id
+                }
+                ticked = Set(tickOrder)
                 await load()
                 // Follow website changes while the list is open.
                 while !Task.isCancelled {
@@ -180,6 +229,7 @@ struct RosterView: View {
             RosterCache.store(roster)
             // Keep ticks only for people who are still listed.
             ticked = ticked.intersection(Set(roster.map(\.id)))
+            tickOrder.removeAll { !ticked.contains($0) }
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
@@ -201,7 +251,7 @@ struct RosterView: View {
                 roster.append(saved)
                 roster.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             }
-            ticked.insert(saved.id)
+            if ticked.insert(saved.id).inserted { tickOrder.append(saved.id) }
             newName = ""
             newEmail = ""
             newIsAdmin = false

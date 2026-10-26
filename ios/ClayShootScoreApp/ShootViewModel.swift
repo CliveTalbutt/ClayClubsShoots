@@ -69,6 +69,32 @@ class ShootViewModel {
 
     /// Makes the shoot's shooters match the ticked roster entries. Anyone who has
     /// already scored stays, even if unticked, so no result is lost.
+    enum ShootOrder: String, CaseIterable, Identifiable {
+        case asEntered, alphabetic, random
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .asEntered: "As entered"
+            case .alphabetic: "Alphabetic"
+            case .random: "Random"
+            }
+        }
+    }
+
+    var shootOrder: ShootOrder = .asEntered
+
+    /// Puts the shooters in the chosen order before the shoot starts. Nothing is reordered once anyone has scored.
+    func applyShootOrder() {
+        guard !isStarted, shootOrder != .asEntered,
+              !shooters.contains(where: { $0.scores.contains { $0.contains { $0 >= 0 } } }) else { return }
+        switch shootOrder {
+        case .alphabetic: shooters.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .random: shooters.shuffle()
+        case .asEntered: break
+        }
+        if !shooters.isEmpty { selectShooter(at: 0) }
+    }
+
     func applyRoster(_ selected: [RosterShooter]) {
         guard !isStarted else { return }
         let wanted = Set(selected.map { $0.name.lowercased() })
@@ -284,20 +310,52 @@ class ShootViewModel {
     /// the shoot starts, fixed afterwards.
     var isHandicapShoot = false
 
-    /// Adds a cheer to the spoken end-of-stand announcement. Chosen in the shoot setup.
-    var isEnthusiastic: Bool = UserDefaults.standard.bool(forKey: "enthusiasticFeedback") {
-        didSet { UserDefaults.standard.set(isEnthusiastic, forKey: "enthusiasticFeedback") }
+    /// The tone of the remark added to the spoken end-of-stand announcement. Chosen in the shoot setup.
+    enum FeedbackStyle: String, CaseIterable, Identifiable {
+        case off, enthusiastic, sarcastic
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .off: "Off"
+            case .enthusiastic: "Enthusiastic"
+            case .sarcastic: "Sarcastic"
+            }
+        }
     }
 
-    private func cheer(for score: Int, outOf total: Int) -> String {
+    var feedbackStyle: FeedbackStyle = FeedbackStyle(rawValue: UserDefaults.standard.string(forKey: "feedbackStyle") ?? "")
+        ?? (UserDefaults.standard.bool(forKey: "enthusiasticFeedback") ? .enthusiastic : .off) {
+        didSet { UserDefaults.standard.set(feedbackStyle.rawValue, forKey: "feedbackStyle") }
+    }
+
+    /// Identifier of the chosen announcer voice; empty means the best available British voice.
+    var voiceID: String = UserDefaults.standard.string(forKey: "voiceID") ?? "" {
+        didSet {
+            UserDefaults.standard.set(voiceID, forKey: "voiceID")
+            speaker.voiceID = voiceID
+        }
+    }
+
+    /// Plays a short sample in the chosen voice.
+    func previewVoice() {
+        speaker.say("Pull! Welcome to the shoot.")
+    }
+
+    private func remark(for score: Int, outOf total: Int) -> String {
         let ratio = total > 0 ? Double(score) / Double(total) : 0
         let phrases: [String]
-        switch ratio {
-        case 1: phrases = ["Absolutely magnificent! A perfect round!", "Spot on! Not a feather out of place!", "Brilliant! Every single one, well done sir!"]
-        case 0.9...: phrases = ["Splendid shooting!", "Jolly good show!", "Superb! Almost perfect!"]
-        case 0.7...: phrases = ["Well shot!", "Very good indeed!", "Nicely done!"]
-        case 0.5...: phrases = ["Not bad at all, keep it up!", "A solid effort, onwards!", "Steady as she goes!"]
-        default: phrases = ["Chin up, the next one's yours!", "Never mind, plenty more to come!", "Shake it off, you'll get them next time!"]
+        switch (feedbackStyle, ratio) {
+        case (.off, _): return ""
+        case (.enthusiastic, 1): phrases = ["Absolutely magnificent! A perfect round!", "Spot on! Not a feather out of place!", "Brilliant! Every single one, well done sir!"]
+        case (.enthusiastic, 0.9...): phrases = ["Splendid shooting!", "Jolly good show!", "Superb! Almost perfect!"]
+        case (.enthusiastic, 0.7...): phrases = ["Well shot!", "Very good indeed!", "Nicely done!"]
+        case (.enthusiastic, 0.5...): phrases = ["Not bad at all, keep it up!", "A solid effort, onwards!", "Steady as she goes!"]
+        case (.enthusiastic, _): phrases = ["Chin up, the next one's yours!", "Never mind, plenty more to come!", "Shake it off, you'll get them next time!"]
+        case (.sarcastic, 1): phrases = ["Oh, perfect. Do try not to let it go to your head.", "Flawless. Well, someone had to be.", "Every single one. How terribly dull for the rest of us."]
+        case (.sarcastic, 0.9...): phrases = ["So close to perfect. Shame about that, really.", "Almost impressive. Almost.", "One little slip. We'll all remember it."]
+        case (.sarcastic, 0.7...): phrases = ["Competent. How very average.", "Not terrible. Don't let that frighten you.", "Perfectly adequate. Congratulations, I suppose."]
+        case (.sarcastic, 0.5...): phrases = ["Half of them. The clays must be so relieved.", "Mediocrity at its finest.", "Well, the clays certainly had a good day."]
+        case (.sarcastic, _): phrases = ["Marvellous. Have you considered taking up croquet?", "The clays send their thanks for not being disturbed.", "Truly remarkable. I've seen pigeons shoot better."]
         }
         return phrases.randomElement() ?? ""
     }
@@ -561,13 +619,23 @@ class ShootViewModel {
         let ranked = shooters.sorted {
             (placings[$0.id] ?? 0, $0.name) < (placings[$1.id] ?? 0, $1.name)
         }
-        var parts = ["Final results."]
-        for shooter in ranked {
-            let name = shooter.name.capitalized
+        // One utterance per place, so a long announcement can never be cut short before the last place.
+        speaker.say("Final results.", interrupt: false)
+        // Shooters on the same place are announced together: "Joint 1st, A and B, with 40."
+        var announced = Set<Int>()
+        for (index, shooter) in ranked.enumerated() {
+            let place = placings[shooter.id] ?? (index + 1)
+            guard announced.insert(place).inserted else { continue }
+            let group = ranked.filter { (placings[$0.id] ?? 0) == place }
+            let names = group.map { $0.name.capitalized }
             let score = isHandicapShoot ? "\(Int(netTotal(shooter))) net" : "\(shooter.grandTotal)"
-            parts.append("\(ordinal(placings[shooter.id] ?? 0)), \(name), \(score).")
+            if names.count > 1 {
+                let list = names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+                speaker.say("Joint \(ordinal(place)), \(list), with \(score).", interrupt: false)
+            } else {
+                speaker.say("\(ordinal(place)), \(names[0]), \(score).", interrupt: false)
+            }
         }
-        speaker.say(parts.joined(separator: " "), interrupt: false)
     }
 
     func placing(for shooter: Shooter) -> Int? {
@@ -860,14 +928,31 @@ class ShootViewModel {
 
     /// Makes sure the microphone is on, for when the app appears or comes back
     /// to the foreground. Does nothing if listening is already under way.
+    /// False while any screen other than the scoresheet is showing (home, roster, settings, past results).
+    private(set) var voiceAllowed = true
+
+    func setVoiceAllowed(_ allowed: Bool) {
+        guard allowed != voiceAllowed else { return }
+        voiceAllowed = allowed
+        if allowed {
+            resumeListening()
+        } else {
+            retryTask?.cancel()
+            retryTask = nil
+            speechResumeTask?.cancel()
+            pausedForSpeech = false
+            if isListening || isStartingSession { stopListening() }
+        }
+    }
+
     func resumeListening() {
         isInBackground = false
-        guard !isListening, !isStartingSession else { return }
+        guard voiceAllowed, !isListening, !isStartingSession else { return }
         startListening(mode: isAddingShooter ? .addingShooter : .scoring)
     }
 
     private func startListening(mode: ListeningMode) {
-        guard !isStartingSession, !isInBackground else { return }
+        guard voiceAllowed, !isStartingSession, !isInBackground else { return }
         retryTask?.cancel()
         retryTask = nil
         // Scoring always has a current shooter; default to the first on the list.
@@ -2064,6 +2149,7 @@ class ShootViewModel {
     /// Shown briefly when a shooter finishes a stand: what they scored and who is up next.
     @ObservationIgnored private let speaker: Speaker = {
         let speaker = Speaker()
+        speaker.voiceID = UserDefaults.standard.string(forKey: "voiceID") ?? ""
         return speaker
     }()
     @ObservationIgnored private var pausedForSpeech = false
@@ -2127,7 +2213,7 @@ class ShootViewModel {
             next = ""
         }
         let score = shooter.standTotal(stand)
-        let cheer = isEnthusiastic ? " " + cheer(for: score, outOf: shooter.scores[stand].count) : ""
+        let cheer = feedbackStyle == .off ? "" : " " + remark(for: score, outOf: shooter.scores[stand].count)
         let said = "\(shooter.name.capitalized), \(score) on stand \(stand + 1).\(cheer)"
         standSummary = StandSummary(shooter: shooter.name.capitalized, stand: stand + 1, score: score,
                                     total: shooter.scores[stand].count, next: next)
@@ -2250,18 +2336,30 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
     private var speaking = false
     private var quietAt = Date.distantPast
 
-    /// The best British male voice installed: Daniel (or Oliver / Arthur), preferring premium and
-    /// enhanced downloads, falling back to any en-GB voice.
-    private static let gentVoice: AVSpeechSynthesisVoice? = {
-        let british = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == "en-GB" }
-        let preferred = ["daniel", "oliver", "arthur"]
-        func rank(_ v: AVSpeechSynthesisVoice) -> Int {
-            let name = v.name.lowercased()
-            let nameScore = preferred.firstIndex { name.contains($0) }.map { 10 - $0 } ?? 0
-            return nameScore * 10 + v.quality.rawValue
+    var voiceID = ""
+
+    /// Up to five female and five male English voices, best quality and British accents first.
+    static func voiceChoices() -> (female: [AVSpeechSynthesisVoice], male: [AVSpeechSynthesisVoice]) {
+        let english = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
+        func ranked(_ gender: AVSpeechSynthesisVoiceGender) -> [AVSpeechSynthesisVoice] {
+            var seen = Set<String>()
+            return english.filter { $0.gender == gender }
+                .sorted {
+                    let a = ($0.language == "en-GB" ? 100 : 0) + $0.quality.rawValue * 10
+                    let b = ($1.language == "en-GB" ? 100 : 0) + $1.quality.rawValue * 10
+                    return a != b ? a > b : $0.name < $1.name
+                }
+                .filter { seen.insert($0.name).inserted }
+                .prefix(5).map { $0 }
         }
-        return british.max { rank($0) < rank($1) } ?? AVSpeechSynthesisVoice(language: "en-GB")
-    }()
+        return (ranked(.female), ranked(.male))
+    }
+
+    private var currentVoice: AVSpeechSynthesisVoice? {
+        if !voiceID.isEmpty, let chosen = AVSpeechSynthesisVoice(identifier: voiceID) { return chosen }
+        let british = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == "en-GB" }
+        return british.max { $0.quality.rawValue < $1.quality.rawValue } ?? AVSpeechSynthesisVoice(language: "en-GB")
+    }
 
     var isBusy: Bool { speaking || Date.now < quietAt }
     var onStart: (() -> Void)?
@@ -2276,9 +2374,10 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
     func say(_ text: String, interrupt: Bool = true) {
         if interrupt { synthesizer.stopSpeaking(at: .immediate) }
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = Self.gentVoice
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
-        utterance.pitchMultiplier = 0.88
+        utterance.voice = currentVoice
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.9
+        utterance.pitchMultiplier = 0.92
+        utterance.postUtteranceDelay = 0.1
         speaking = true
         quietAt = Date.now.addingTimeInterval(60)
         onStart?()

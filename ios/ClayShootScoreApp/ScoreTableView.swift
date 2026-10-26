@@ -307,10 +307,6 @@ struct ScoreTableView: View {
         let shooter = vm.shooters[shooterIndex]
         let isCurrentShooter = shooterIndex == vm.currentShooterIndex && !vm.isFinished
         return HStack(spacing: 4) {
-    Image(systemName: "arrowtriangle.right.fill")
-        .font(.caption2)
-        .foregroundStyle(Color.accentColor)
-        .opacity(isCurrentShooter ? 1 : 0)
     Text(shooter.name.capitalized)
         .font(.subheadline)
         .fontWeight(isCurrentShooter ? .bold : .regular)

@@ -12,14 +12,15 @@
     </div>
   </div>
   <table class="results-table leader-table">
-    <thead><tr><th>Place</th><th>Shooter</th><th>Avg %</th><th>Shoots</th><th>Total hits</th><th class="cpsa-hint" tabindex="0">CPSA Class</th></tr></thead>
+    <thead><tr><th>Place</th><th>Shooter</th><th>Avg %</th><th>Shoots</th><th title="Share of the club's shoots in the last 12 months that this shooter shot">Attended %</th><th>Total hits</th><th class="cpsa-hint" tabindex="0">CPSA Class</th></tr></thead>
     <tbody>
       <% const medals = ['🥇', '🥈', '🥉']; board.forEach(s => { %>
         <tr>
-          <td><%= medals[s.place - 1] || s.place %></td>
+          <td><% if (board.filter((o) => o.place === s.place).length > 1) { %><span class="joint">Joint</span> <% } %><%= medals[s.place - 1] || s.place %></td>
           <th scope="row"><span<%- shooterAttrs(s.name) %>><%= s.name %></span></th>
           <td><strong><%= s.avgPct.toFixed(1) %>%</strong></td>
           <td><%= s.shoots %></td>
+          <td><%= s.attendPct.toFixed(0) %>%</td>
           <td><%= s.hits %></td>
           <td><% if (s.cpsa) { %><span class="cpsa-hint" tabindex="0" data-cpsa="<%= s.cpsa.name %>" data-basis="last 12 months"><%= s.cpsa.icon %> <%= s.cpsa.name %></span><% } %></td>
         </tr>

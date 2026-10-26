@@ -71,6 +71,43 @@ enum HandicapPeriod: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+nonisolated struct PastShoot: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let name: String
+    let venue: String?
+    let date: String
+    let stands: Int
+    let shooters: Int
+    let handicap: Bool
+
+    /// e.g. "26 Oct 2026 · West Peckham Shoot"
+    var title: String {
+        let day = String(date.prefix(10))
+        let parsed = ISO8601DateFormatter().date(from: day + "T12:00:00Z")
+        let shown = parsed?.formatted(.dateTime.day().month(.abbreviated).year()) ?? day
+        return "\(shown) · \(name)"
+    }
+}
+
+nonisolated struct PastShootResults: Decodable, Sendable {
+    nonisolated struct Entry: Decodable, Identifiable, Sendable {
+        let name: String
+        let total: Int
+        let scores: [Int]
+        let handicap: Double
+        let net: Double
+        let place: Int
+        var id: String { name }
+    }
+    let id: String
+    let name: String
+    let venue: String?
+    let date: String
+    let stands: Int
+    let handicap: Bool
+    let shooters: [Entry]
+}
+
 nonisolated struct HandicapReply: Decodable, Sendable {
     nonisolated struct Average: Decodable, Sendable { let name: String; let average: Double }
     let averages: [Average]
@@ -234,6 +271,27 @@ nonisolated struct ClayShootsClient: Sendable {
         let (data, response) = try await perform(request)
         try Self.check(response, data: data, expected: 200)
         return try JSONDecoder().decode(CurrentShootReply.self, from: data)
+    }
+
+    /// Finished shoots, newest first.
+    func shootHistory() async throws -> [PastShoot] {
+        var request = URLRequest(url: baseURL.appending(path: "api/v1/shoots/history"))
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await perform(request)
+        try Self.check(response, data: data, expected: 200)
+        struct Reply: Decodable { let shoots: [PastShoot] }
+        return try JSONDecoder().decode(Reply.self, from: data).shoots
+    }
+
+    /// The results of one finished shoot.
+    func pastShoot(id: String) async throws -> PastShootResults {
+        var request = URLRequest(url: baseURL.appending(path: "api/v1/shoots/history").appending(path: id))
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await perform(request)
+        try Self.check(response, data: data, expected: 200)
+        return try JSONDecoder().decode(PastShootResults.self, from: data)
     }
 
     /// Each shooter's average score per stand over the last year, for handicap shoots.

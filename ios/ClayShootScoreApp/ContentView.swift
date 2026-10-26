@@ -18,6 +18,10 @@ struct ContentView: View {
     @State private var isConfirmingNewShoot = false
     @State private var isShowingSettings = false
     @State private var isShowingRoster = false
+    /// True only when the roster opened by itself at startup; one the user opened stays until they leave it.
+    @State private var rosterOpenedAutomatically = false
+    @State private var pastShoots: [PastShoot] = []
+    @State private var selectedPastShoot: PastShoot?
     @State private var serverSettings = ClayShootsSettings()
     @State private var lastLocalEdit = Date.distantPast
 
@@ -101,6 +105,7 @@ struct ContentView: View {
             .onAppear {
                 serverSettings.importPendingConfig()
                 isScoreTableFocused = true
+                vm.setVoiceAllowed(onScoreScreen)
                 // A new shoot starts at "Who is shooting?"; a resumed one shows its shooters and scores.
                 // If the club already has a shoot running, go straight to it instead.
                 if vm.shooters.isEmpty { Task { await openCurrentShootOrRoster() } }
@@ -115,6 +120,7 @@ struct ContentView: View {
             .task { await followRoster() }
             .task(id: "\(serverSettings.serverURL)|\(serverSettings.apiKey)|\(scenePhase == .active)") { await followCurrentShoot() }
             .task { await flushOutbox() }
+            .onChange(of: onScoreScreen) { _, onScreen in vm.setVoiceAllowed(onScreen) }
             .onChange(of: vm.isAddingShooter) { _, isAdding in
                 if !isAdding { isScoreTableFocused = true }
             }
@@ -183,7 +189,10 @@ struct ContentView: View {
                     .presentationDetents([.medium, .large])
             }
         }
-        .sheet(isPresented: $isShowingRoster) {
+        .sheet(item: $selectedPastShoot) { shoot in
+            PastShootView(shoot: shoot, settings: serverSettings)
+        }
+        .sheet(isPresented: $isShowingRoster, onDismiss: { rosterOpenedAutomatically = false }) {
             RosterView(vm: vm, settings: serverSettings)
                 .presentationDetents([.large])
         }
@@ -276,6 +285,7 @@ struct ContentView: View {
     private func showRosterSoon() {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(500))
+            rosterOpenedAutomatically = false
             isShowingRoster = true
         }
     }
@@ -315,6 +325,12 @@ struct ContentView: View {
 
     /// Shown once every shooter has finished: makes sure the final results are queued,
     /// clears the sheet and opens "Who is shooting?" for the next shoot.
+    /// Voice recognition only runs on the scoresheet, not on the home screen or any sheet over it.
+    private var onScoreScreen: Bool {
+        (!vm.shooters.isEmpty || vm.isAddingShooter)
+            && !isShowingRoster && !isShowingSettings && selectedPastShoot == nil
+    }
+
     private var scoreTable: some View {
         ScoreTableView(vm: vm)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -353,6 +369,7 @@ struct ContentView: View {
             Text("Ready for the next shoot")
                 .foregroundStyle(.secondary)
             Button {
+                rosterOpenedAutomatically = false
                 isShowingRoster = true
             } label: {
                 Label("New Shoot", systemImage: "plus.circle.fill")
@@ -362,13 +379,19 @@ struct ContentView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(.green)
-            Button {
-                Task { await openCurrentShootOrRoster() }
+            Menu {
+                if pastShoots.isEmpty {
+                    Text("No previous shoots yet")
+                }
+                ForEach(pastShoots) { shoot in
+                    Button(shoot.title) { selectedPastShoot = shoot }
+                }
             } label: {
-                Label("Join the current shoot", systemImage: "person.2.wave.2")
+                Label("Previous shoots", systemImage: "clock.arrow.circlepath")
                     .frame(maxWidth: 360)
             }
             .buttonStyle(.bordered)
+            .task { await loadPastShoots() }
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -379,6 +402,7 @@ struct ContentView: View {
         Button {
             queueFinalResults()
             vm.startNewShoot()
+            rosterOpenedAutomatically = false
             isShowingRoster = true
         } label: {
             Label("New Shoot", systemImage: "plus.circle.fill")
@@ -422,6 +446,7 @@ struct ContentView: View {
 
     private var rosterButton: some View {
         Button {
+            rosterOpenedAutomatically = false
             isShowingRoster = true
         } label: {
             Label("Membership", systemImage: "person.3.fill")
@@ -530,6 +555,11 @@ struct ContentView: View {
         }
     }
 
+    private func loadPastShoots() async {
+        guard let client = serverSettings.client, let list = try? await client.shootHistory() else { return }
+        pastShoots = list
+    }
+
     private func openCurrentShootOrRoster() async {
         if let client = serverSettings.client,
            let reply = try? await client.currentShoot(externalId: vm.shootSessionId),
@@ -537,6 +567,7 @@ struct ContentView: View {
             vm.adoptRemote(current)
             exportMessage = "Joined the club's current shoot: \(current.name)."
         } else if vm.shooters.isEmpty {
+            rosterOpenedAutomatically = true
             isShowingRoster = true
         }
     }
@@ -547,7 +578,7 @@ struct ContentView: View {
         // other shoot must never stop it joining the club's current one.
         let unsent = UploadOutbox.pending.contains { $0.id == vm.shootSessionId }
         // A roster opened with nothing chosen yet gives way to a shoot another device has started.
-        if isShowingRoster, vm.shooters.isEmpty, reply.current != nil { isShowingRoster = false }
+        if isShowingRoster, rosterOpenedAutomatically, vm.shooters.isEmpty, reply.current != nil { isShowingRoster = false }
         let choosingShooters = vm.isAddingShooter || isShowingRoster
         // Another device completed this shoot: show the final results here too, locked.
         if let mine = reply.requested, mine.complete, !vm.isFinished, !unsent, vm.isStarted {
@@ -557,7 +588,7 @@ struct ContentView: View {
         if current.externalId == vm.shootSessionId {
             let idle = Date.now.timeIntervalSince(lastLocalEdit) > 3
             vm.mergeRemote(current, includeOwned: !unsent && idle)
-        } else if !choosingShooters, !unsent || !vm.isStarted {
+        } else if !choosingShooters, vm.isStarted ? !unsent : vm.shooters.isEmpty {
             // The club has one current shoot (the newest active one) and every device shows it.
             vm.adoptRemote(current)
             exportMessage = "Joined the club's current shoot: \(current.name)."
