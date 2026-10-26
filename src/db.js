@@ -170,6 +170,9 @@ if (!db.prepare('SELECT 1 FROM users WHERE is_super = 1').get()) {
 for (const [col, def] of [['email_verified_at', 'TEXT'], ['verify_token_hash', 'TEXT'], ['verify_sent_at', 'TEXT']]) {
   if (!db.prepare("SELECT 1 FROM pragma_table_info('roster') WHERE name = ?").get(col)) db.exec(`ALTER TABLE roster ADD COLUMN ${col} ${def}`);
 }
+// 1 = finished (every older shoot is); live apps upload 0 until the shoot ends.
+if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'locked_stands'").get()) db.exec("ALTER TABLE shoots ADD COLUMN locked_stands TEXT NOT NULL DEFAULT '[]'");
+if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'complete'").get()) db.exec('ALTER TABLE shoots ADD COLUMN complete INTEGER NOT NULL DEFAULT 1');
 if (!db.prepare("SELECT 1 FROM pragma_table_info('results') WHERE name = 'pattern'").get()) db.exec('ALTER TABLE results ADD COLUMN pattern TEXT');
 if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'updated_at'").get()) {
   db.exec('ALTER TABLE shoots ADD COLUMN updated_at TEXT');

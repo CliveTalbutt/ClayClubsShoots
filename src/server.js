@@ -137,6 +137,10 @@ app.post('/api/v1/clubs/connect', loginLimiter, express.json({ limit: '2kb' }), 
   res.set('Cache-Control', 'no-store').json({ club: club.club_name, apiKey: key });
 });
 const apiLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true, legacyHeaders: false });
+// Devices poll the current shoot about once a second, so this needs far more headroom.
+// Live scoring sends an upload per change, so uploads get a far higher allowance than other calls.
+const uploadLimiter = rateLimit({ windowMs: 60_000, limit: 600, standardHeaders: true, legacyHeaders: false });
+const pollLimiter = rateLimit({ windowMs: 60_000, limit: 600, standardHeaders: true, legacyHeaders: false });
 app.get('/api/v1/ping', apiLimiter, (req, res) => {
   const m = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization || '');
   const user = m && userByKey(m[1]);
@@ -171,7 +175,7 @@ function notifyOnce(userId, shootId, flags) {
   if (flags.email) mailer.sendShoot(userId, shootId);
   if (flags.social) social.postShoot(userId, shootId);
 }
-app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res) => {
+app.post('/api/v1/shoots', uploadLimiter, express.json({ limit: '1mb' }), (req, res) => {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
   const user = m && userByKey(m[1]);
   if (!user) return res.status(401).json({ error: 'invalid_api_key' });
@@ -191,6 +195,8 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
   if (Array.isArray(b.shooters) && b.shooters.some((s) => s && s.email != null && s.email !== '' && !mailer.validEmail(s.email))) errors.push('shooter email invalid');
   if (b.complete != null && typeof b.complete !== 'boolean') errors.push('complete must be true or false');
   if (b.externalId != null && !str(b.externalId, 100)) errors.push('externalId invalid');
+  if (b.ownedStands != null && !(Array.isArray(b.ownedStands) && b.ownedStands.every((n) => Number.isInteger(n) && n >= 1 && n <= (b.stands || 0)))) errors.push('ownedStands must list stand numbers within the shoot');
+  if (b.lockedStands != null && !(Array.isArray(b.lockedStands) && b.lockedStands.every((n) => Number.isInteger(n) && n >= 1 && n <= (b.stands || 0)))) errors.push('lockedStands must list stand numbers within the shoot');
   if (!Array.isArray(b.shooters) || b.shooters.length < 1 || b.shooters.length > 500) errors.push('shooters must be an array of 1-500');
   else {
     const seen = new Set();
@@ -219,9 +225,28 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
       db.transaction(() => {
         db.prepare("UPDATE shoots SET name = ?, venue = ?, shoot_date = ?, shoot_time = ?, stands = ?, targets_per_stand = ?, updated_at = datetime('now') WHERE id = ?")
           .run(b.name.trim(), b.venue?.trim() ?? null, b.date, b.time ?? null, b.stands, tps, existing.id);
-        db.prepare('DELETE FROM results WHERE shoot_id = ?').run(existing.id);
-        const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score, pattern) VALUES (?,?,?,?,?)');
-        for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(existing.id, s.name.trim(), i + 1, sc, s.patterns?.[i] ?? null));
+        const ins = db.prepare('INSERT OR REPLACE INTO results (shoot_id, shooter, stand, score, pattern) VALUES (?,?,?,?,?)');
+        if (Array.isArray(b.ownedStands)) {
+          // Several devices share one shoot: each writes only the stands assigned to it and
+          // leaves the rest (and shooters it has not heard of) as other devices recorded them.
+          const owned = new Set(b.ownedStands);
+          const has = db.prepare('SELECT 1 FROM results WHERE shoot_id = ? AND shooter = ? AND stand = ?');
+          for (const s of b.shooters) s.scores.forEach((sc, i) => {
+            if (owned.has(i + 1) || !has.get(existing.id, s.name.trim(), i + 1)) ins.run(existing.id, s.name.trim(), i + 1, sc, s.patterns?.[i] ?? null);
+          });
+        } else {
+          db.prepare('DELETE FROM results WHERE shoot_id = ?').run(existing.id);
+          for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(existing.id, s.name.trim(), i + 1, sc, s.patterns?.[i] ?? null));
+        }
+        if (Array.isArray(b.lockedStands)) {
+          // A device only decides the locks of the stands it owns; a locked stand stays locked.
+          const old = JSON.parse(db.prepare('SELECT locked_stands FROM shoots WHERE id = ?').get(existing.id).locked_stands || '[]');
+          const owned = Array.isArray(b.ownedStands) ? new Set(b.ownedStands) : null;
+          const kept = owned ? old.filter((n) => !owned.has(n)) : [];
+          const locked = [...new Set([...kept, ...b.lockedStands])].sort((x, y) => x - y);
+          db.prepare('UPDATE shoots SET locked_stands = ? WHERE id = ?').run(JSON.stringify(locked), existing.id);
+        }
+        if (b.complete === true) db.prepare('UPDATE shoots SET complete = 1 WHERE id = ?').run(existing.id);
       })();
       mailer.saveEmails(user.id, b.shooters);
       if (b.complete === true) notifyOnce(user.id, existing.id, flags);
@@ -229,8 +254,9 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
     }
     const id = db.transaction(() => {
       const r = db.prepare(
-        "INSERT INTO shoots (user_id, external_id, name, venue, shoot_date, shoot_time, stands, targets_per_stand, updated_at) VALUES (?,?,?,?,?,?,?,?, datetime('now'))"
-      ).run(user.id, b.externalId ?? null, b.name.trim(), b.venue?.trim() ?? null, b.date, b.time ?? null, b.stands, tps);
+        "INSERT INTO shoots (user_id, external_id, name, venue, shoot_date, shoot_time, stands, targets_per_stand, complete, updated_at) VALUES (?,?,?,?,?,?,?,?,?, datetime('now'))"
+      ).run(user.id, b.externalId ?? null, b.name.trim(), b.venue?.trim() ?? null, b.date, b.time ?? null, b.stands, tps, b.complete === false ? 0 : 1);
+      if (Array.isArray(b.lockedStands)) db.prepare('UPDATE shoots SET locked_stands = ? WHERE id = ?').run(JSON.stringify([...new Set(b.lockedStands)].sort((x, y) => x - y)), r.lastInsertRowid);
       const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score, pattern) VALUES (?,?,?,?,?)');
       for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(r.lastInsertRowid, s.name.trim(), i + 1, sc, s.patterns?.[i] ?? null));
       return r.lastInsertRowid;
@@ -243,6 +269,30 @@ app.post('/api/v1/shoots', apiLimiter, express.json({ limit: '1mb' }), (req, res
     if (String(e.code).startsWith('SQLITE_CONSTRAINT')) return res.status(409).json({ error: 'duplicate_externalId' });
     throw e;
   }
+});
+
+// The club's current shoot: the newest one still being scored. Apps load it at startup and
+// poll it so several devices can score different stands of the same shoot.
+app.get('/api/v1/shoots/current', pollLimiter, (req, res) => {
+  const user = apiUser(req, res);
+  if (!user) return;
+  const shape = (row) => {
+    const tps = row.targets_per_stand;
+    const by = new Map();
+    for (const r of db.prepare('SELECT shooter, stand, score, pattern FROM results WHERE shoot_id = ? ORDER BY rowid').all(row.id)) {
+      if (!by.has(r.shooter)) by.set(r.shooter, { name: r.shooter, patterns: Array(row.stands).fill('-'.repeat(tps)) });
+      if (r.stand >= 1 && r.stand <= row.stands && r.pattern) by.get(r.shooter).patterns[r.stand - 1] = r.pattern;
+    }
+    return { externalId: row.external_id, name: row.name, venue: row.venue, date: row.shoot_date, time: row.shoot_time,
+      stands: row.stands, targetsPerStand: tps, shooters: [...by.values()] };
+  };
+  const cur = db.prepare('SELECT * FROM shoots WHERE user_id = ? AND complete = 0 AND external_id IS NOT NULL ORDER BY id DESC LIMIT 1').get(user.id);
+  const ext = typeof req.query.externalId === 'string' ? req.query.externalId.slice(0, 100) : null;
+  const mine = ext ? db.prepare('SELECT complete FROM shoots WHERE user_id = ? AND external_id = ?').get(user.id, ext) : null;
+  res.set('Cache-Control', 'no-store').json({
+    current: cur ? shape(cur) : null,
+    requested: mine ? { externalId: ext, complete: mine.complete === 1 } : null,
+  });
 });
 
 // ---- Web app ----
@@ -615,13 +665,14 @@ app.get('/results', needAuth, (req, res) => {
     });
     shooters.forEach((s) => { s.place = 1 + shooters.filter((o) => o.total > s.total).length; });
   }
-  res.render('results', { shoots, shoot, shooters });
+  const lockedStands = shoot ? JSON.parse(shoot.locked_stands || '[]') : [];
+  res.render('results', { shoots, shoot, shooters, lockedStands });
 });
 
 // Cheap change fingerprint of this user's data, polled by public/live.js
 app.get('/live', needAuth, (req, res) => {
   const uid = req.session.userId;
-  const s = db.prepare('SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m, COALESCE(MAX(updated_at), \'\') AS u, COALESCE(group_concat(shoot_date || COALESCE(shoot_time, \'\') || name || COALESCE(venue, \'\'), \'|\'), \'\') AS d FROM shoots WHERE user_id = ?').get(uid);
+  const s = db.prepare('SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m, COALESCE(MAX(updated_at), \'\') AS u, COALESCE(group_concat(shoot_date || COALESCE(shoot_time, \'\') || name || COALESCE(venue, \'\') || locked_stands, \'|\'), \'\') AS d FROM shoots WHERE user_id = ?').get(uid);
   const r = db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(r.score),0) AS t FROM results r JOIN shoots s ON s.id = r.shoot_id WHERE s.user_id = ?').get(uid);
   const ro = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(id * (1 + (kind = 'member') + 2 * (status = 'expired') + 4 * is_admin)), 0) AS t FROM roster WHERE user_id = ?").get(uid);
   res.set('Cache-Control', 'no-store').json({ added: s.m, v: `${ro.n}:${ro.t}:${s.n}:${s.m}:${s.u}:${require('crypto').createHash('md5').update(s.d).digest('hex')}:${r.n}:${r.t}` });
@@ -655,7 +706,7 @@ app.get('/shoots/:token', needAuth, (req, res) => {
   }
   const sort = req.query.sort === 'name' ? 'name' : 'total';
   const shooters = [...map.values()].sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : b.total - a.total));
-  res.render('shoot', { shoot, shooters, sort, max: shoot.stands * shoot.targets_per_stand });
+  res.render('shoot', { shoot, shooters, lockedStands: JSON.parse(shoot.locked_stands || '[]'), sort, max: shoot.stands * shoot.targets_per_stand });
 });
 
 app.post('/shoots/:token/delete', needAuth, (req, res) => {

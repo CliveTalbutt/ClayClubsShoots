@@ -41,6 +41,6 @@ if (watched.some((p) => location.pathname.startsWith(p))) {
     } catch { /* offline or restarting: try again next time */ }
   };
   check();
-  setInterval(check, 1500);
+  setInterval(check, 500);
   document.addEventListener('visibilitychange', check);
 }

@@ -44,6 +44,13 @@ struct RosterView: View {
                         .foregroundStyle(.orange)
                 }
 
+                if ticked.count < ShootViewModel.minimumShooters {
+                    Label("At least \(ShootViewModel.minimumShooters) shooters are needed to start a shoot (\(ticked.count) selected).",
+                          systemImage: "person.2.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
+
                 Section("Registered shooters") {
                     if roster.isEmpty {
                         Text(isLoading ? "Loading…" : "No registered shooters yet. Add one below.")
@@ -113,10 +120,14 @@ struct RosterView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
+                    Button("Start Shoot") {
                         vm.applyRoster(roster.filter { ticked.contains($0.id) })
+                        vm.startShoot()
                         dismiss()
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .disabled(ticked.count < ShootViewModel.minimumShooters)
                 }
             }
             .refreshable { await load() }

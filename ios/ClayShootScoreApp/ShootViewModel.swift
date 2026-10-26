@@ -70,6 +70,7 @@ class ShootViewModel {
     /// Makes the shoot's shooters match the ticked roster entries. Anyone who has
     /// already scored stays, even if unticked, so no result is lost.
     func applyRoster(_ selected: [RosterShooter]) {
+        guard !isStarted else { return }
         let wanted = Set(selected.map { $0.name.lowercased() })
         for index in shooters.indices.reversed() {
             let shooter = shooters[index]
@@ -157,6 +158,7 @@ class ShootViewModel {
     var numberOfStands: Int {
         didSet {
             guard numberOfStands != oldValue else { return }
+            if isStarted { numberOfStands = oldValue; return }
             UserDefaults.standard.set(numberOfStands, forKey: Self.numberOfStandsKey)
             rememberStands(numberOfStands, forShoot: shootName)
             applyStandCount()
@@ -213,12 +215,14 @@ class ShootViewModel {
         var currentStand: Int
         var currentTarget: Int
         var kinds: [String: String]
+        var started: Bool?
+        var confirmed: [Int]?
     }
 
     /// Changes whenever anything worth resuming changes, so the view can save on every change.
     var snapshotSignature: String {
         let rows = shooters.map { $0.name + ":" + $0.scores.map { $0.map(String.init).joined(separator: ",") }.joined(separator: "|") }
-        return "\(rows.joined(separator: ";"))#\(currentShooterIndex ?? -1)#\(currentStand)#\(currentTarget)#\(shootSessionId)#\(kinds.count)"
+        return "\(isStarted)#\(rows.joined(separator: ";"))#\(currentShooterIndex ?? -1)#\(currentStand)#\(currentTarget)#\(shootSessionId)#\(kinds.count)"
     }
 
     /// Saves the shoot so a relaunch within the resume window carries on where it stopped.
@@ -227,7 +231,8 @@ class ShootViewModel {
             savedAt: .now, sessionId: shootSessionId, shootStart: shootStart,
             shooters: shooters.map { .init(name: $0.name, scores: $0.scores) },
             currentShooterIndex: currentShooterIndex, currentStand: currentStand,
-            currentTarget: currentTarget, kinds: kinds)
+            currentTarget: currentTarget, kinds: kinds, started: isStarted,
+            confirmed: Array(confirmedStands).sorted())
         if let data = try? JSONEncoder().encode(snapshot) { UserDefaults.standard.set(data, forKey: Self.snapshotKey) }
     }
 
@@ -249,6 +254,10 @@ class ShootViewModel {
         currentShooterIndex = snap.currentShooterIndex.flatMap { shooters.indices.contains($0) ? $0 : nil }
         currentStand = min(max(snap.currentStand, 0), numberOfStands)
         currentTarget = min(max(snap.currentTarget, 0), Self.targetsPerStand - 1)
+        isStarted = snap.started ?? hasAnyScore
+        confirmedSession = snap.sessionId
+        // Shoots saved before stands needed confirming keep their completed stands locked.
+        confirmedStands = Set(snap.confirmed ?? shooters.first.map { Array($0.scores.indices) }.map { $0.filter(isStandComplete) } ?? [])
     }
 
     /// The full heading, e.g. "West Peckham Shoot - 23 October 2026".
@@ -259,6 +268,48 @@ class ShootViewModel {
     }
 
     var shooters: [Shooter] = []
+
+    /// True once "Start Shoot" has been pressed (here or on another device). From then on the
+    /// shooters and the number of stands are fixed, and the shoot is on the server.
+    private(set) var isStarted = false
+
+    /// Locks in the shooters and stands and begins the shoot.
+    static let minimumShooters = 2
+    var hasMinimumShooters: Bool { shooters.count >= Self.minimumShooters }
+
+    func startShoot() {
+        guard hasMinimumShooters, !isStarted else { return }
+        finishAddingShooters()
+        isStarted = true
+        saveSnapshot()
+    }
+
+    /// Stands this device scores, e.g. "1-3, 5". Blank means every stand. When several
+    /// devices share a shoot each is given different stands so they never overwrite each other.
+    var ownedStandsText: String = UserDefaults.standard.string(forKey: "ownedStands") ?? "" {
+        didSet {
+            UserDefaults.standard.set(ownedStandsText, forKey: "ownedStands")
+            if currentStand < numberOfStands, !isStandOwned(currentStand) {
+                currentStand = firstOwnedStand
+                if let index = currentShooterIndex { selectShooter(at: index) }
+            }
+        }
+    }
+
+    /// The stands (counting from 0) this device scores; nil when it scores them all.
+    var ownedStands: Set<Int>? {
+        var set = Set<Int>()
+        for part in ownedStandsText.split(whereSeparator: { ", ;".contains($0) }) {
+            let bounds = part.split(separator: "-").compactMap { Int($0) }
+            if bounds.count == 1 { set.insert(bounds[0] - 1) }
+            else if bounds.count == 2, bounds[0] <= bounds[1] { (bounds[0]...bounds[1]).forEach { set.insert($0 - 1) } }
+        }
+        set = set.filter { $0 >= 0 && $0 < numberOfStands }
+        return set.isEmpty ? nil : set
+    }
+
+    func isStandOwned(_ stand: Int) -> Bool { ownedStands?.contains(stand) ?? true }
+    var firstOwnedStand: Int { ownedStands?.min() ?? 0 }
 
     /// Identifies this shoot on the server so every live upload replaces the previous one.
     /// A new one is made at launch and whenever the shoot is cleared and started again.
@@ -473,6 +524,7 @@ class ShootViewModel {
     /// speaker pauses for 1.4 seconds, and listening continues until Finish is
     /// pressed or the maximum number of shooters is reached.
     func startAddingShooter() {
+        guard !isStarted else { return }
         guard !isFull else { return }
         isAddingShooter = true
         pendingShooterName = ""
@@ -547,7 +599,7 @@ class ShootViewModel {
 
     func addShooter(named name: String) {
         let name = Self.cleanedName(name)
-        guard !name.isEmpty, !isFull else { return }
+        guard !name.isEmpty, !isFull, !isStarted else { return }
         shooters.append(
             Shooter(name: name.lowercased(),
                     numberOfStands: numberOfStands,
@@ -560,7 +612,7 @@ class ShootViewModel {
 
     /// Removes one shooter and keeps scoring pointed at a sensible shooter.
     func removeShooter(at index: Int) {
-        guard shooters.indices.contains(index) else { return }
+        guard shooters.indices.contains(index), !isStarted else { return }
         shooters.remove(at: index)
         guard !shooters.isEmpty else {
             removeAllShooters()
@@ -579,11 +631,36 @@ class ShootViewModel {
 
     /// Removes every shooter and starts the shoot again from the first stand.
     func removeAllShooters() {
+        standSummary = nil
+        scoringPausedUntil = .distantPast
+        isStarted = false
+        confirmedStands = []
+        editingStands = [:]
+        standAwaitingConfirmation = nil
         shootSessionId = UUID().uuidString
         shooters.removeAll()
         currentShooterIndex = nil
-        currentStand = 0
+        currentStand = firstOwnedStand
         currentTarget = 0
+    }
+
+    /// Ends the shoot: targets not yet scored count as misses, which completes every stand, so
+    /// the final results show and all scoring is locked until a new shoot is started.
+    func finishShoot() {
+        guard !shooters.isEmpty else { return }
+        for index in shooters.indices {
+            for stand in shooters[index].scores.indices {
+                for target in shooters[index].scores[stand].indices where shooters[index].scores[stand][target] < 0 {
+                    shooters[index].scores[stand][target] = 0
+                }
+            }
+        }
+        isStarted = true
+        confirmedSession = shootSessionId
+        confirmedStands = Set(0..<numberOfStands)
+        editingStands = [:]
+        standAwaitingConfirmation = nil
+        saveSnapshot()
     }
 
     /// Clears the finished shoot and gets ready for the next one, with a fresh session
@@ -594,11 +671,83 @@ class ShootViewModel {
         saveSnapshot()
     }
 
-    /// A stand is locked once every shooter has scored every target on it; its scores can then no longer be changed.
-    func isStandLocked(_ stand: Int) -> Bool {
+    /// Every shooter has scored every target on the stand.
+    func isStandComplete(_ stand: Int) -> Bool {
         !shooters.isEmpty && shooters.indices.allSatisfy {
             shooters[$0].scores.indices.contains(stand) && firstUnscoredTarget(ofShooterAt: $0, stand: stand) == nil
         }
+    }
+
+    /// Stands this device has confirmed as finished, for the current shoot.
+    private(set) var confirmedStands: Set<Int> = []
+    private var confirmedSession = ""
+
+    /// A completed stand waiting for the scorer to confirm it, which shows the confirmation prompt.
+    var standAwaitingConfirmation: Int?
+
+    /// Stands where the scorer chose to keep editing, with when they last changed and their scores then.
+    private var editingStands: [Int: (changed: Date, scores: String)] = [:]
+    static let editLockDelay: TimeInterval = 15
+
+    /// A stand is locked once it is complete and confirmed (or after 15 s without edits). Stands
+    /// scored by other devices lock as soon as they are complete, since this device can't edit them.
+    func isStandLocked(_ stand: Int) -> Bool {
+        isStandComplete(stand) && (confirmedStands.contains(stand) || !isStandOwned(stand))
+    }
+
+    private func scoresKey(_ stand: Int) -> String {
+        shooters.map { $0.scores.indices.contains(stand) ? $0.scores[stand].map(String.init).joined(separator: ",") : "" }.joined(separator: "|")
+    }
+
+    /// Call whenever scores change and about once a second: asks about newly completed stands and
+    /// locks stands that have sat unedited for the delay after the scorer chose to keep editing.
+    func evaluateStandCompletion() {
+        if confirmedSession != shootSessionId {
+            confirmedSession = shootSessionId
+            confirmedStands = []
+            editingStands = [:]
+            standAwaitingConfirmation = nil
+        }
+        guard isStarted, !shooters.isEmpty else { return }
+
+        for (stand, state) in editingStands {
+            let key = scoresKey(stand)
+            if key != state.scores {
+                editingStands[stand] = (.now, key)
+            } else if isStandComplete(stand), Date.now.timeIntervalSince(state.changed) >= Self.editLockDelay {
+                editingStands[stand] = nil
+                confirmedStands.insert(stand)
+                saveSnapshot()
+            }
+        }
+
+        if let pending = standAwaitingConfirmation, !isStandComplete(pending) || confirmedStands.contains(pending) {
+            standAwaitingConfirmation = nil
+        }
+        // The combined card has nothing left to ask once its stand is edited, locked or no longer complete.
+        if standSummary?.needsConfirmation == true, standAwaitingConfirmation == nil { dismissStandSummary() }
+        guard standAwaitingConfirmation == nil else { return }
+        standAwaitingConfirmation = (0..<numberOfStands).first {
+            isStandOwned($0) && isStandComplete($0) && !confirmedStands.contains($0) && editingStands[$0] == nil
+        }
+        if standAwaitingConfirmation != nil {
+            AudioServicesPlaySystemSound(1007)
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        }
+    }
+
+    /// The scorer's answer to "is this stand complete?".
+    func answerStandConfirmation(complete: Bool) {
+        guard let stand = standAwaitingConfirmation else { return }
+        standAwaitingConfirmation = nil
+        if standSummary?.needsConfirmation == true { dismissStandSummary() }
+        if complete {
+            confirmedStands.insert(stand)
+            editingStands[stand] = nil
+        } else {
+            editingStands[stand] = (.now, scoresKey(stand))
+        }
+        saveSnapshot()
     }
 
     /// Wipes a shooter's scores, either on one stand or on every stand, and moves
@@ -1347,6 +1496,10 @@ class ShootViewModel {
             errorMessage = "There is no stand \(stand + 1) in this shoot."
             return
         }
+        guard isStandOwned(stand) else {
+            errorMessage = "Stand \(stand + 1) is scored by another device."
+            return
+        }
         currentStand = stand
         guard !shooters.isEmpty else { return }
 
@@ -1514,6 +1667,8 @@ class ShootViewModel {
                 return
             }
             clearScores(ofShooterAt: index, stand: stand)
+        } else if isStarted {
+            errorMessage = "The shoot has started, so shooters can no longer be removed."
         } else if let match {
             removeShooter(at: match.index)
         } else if mentionsShooter, nameWords.isEmpty {
@@ -1641,7 +1796,9 @@ class ShootViewModel {
         guard let index = currentShooterIndex,
               shooters.indices.contains(index),
               shooters[index].scores.indices.contains(currentStand),
-              currentTarget < Self.targetsPerStand else { return }
+              isStandOwned(currentStand),
+              currentTarget < Self.targetsPerStand,
+              Date.now >= scoringPausedUntil else { return }
 
         shooters[index].scores[currentStand][currentTarget] = value
         // Confirmation beep for every recorded score, spoken or manual.
@@ -1651,7 +1808,9 @@ class ShootViewModel {
         currentTarget += 1
 
         if currentTarget >= Self.targetsPerStand {
+            let finished = (index: index, stand: currentStand)
             advanceToNextShooter()
+            announceStandDone(shooterIndex: finished.index, stand: finished.stand)
         }
         // Listening carries on after the last target so "clear …" commands can
         // still correct a result.
@@ -1676,7 +1835,8 @@ class ShootViewModel {
 
         var stand = currentStand + 1
         while stand < numberOfStands {
-            if let shooter = shooters.indices.first(where: { firstUnscoredTarget(ofShooterAt: $0, stand: stand) != nil }),
+            if isStandOwned(stand),
+               let shooter = shooters.indices.first(where: { firstUnscoredTarget(ofShooterAt: $0, stand: stand) != nil }),
                let target = firstUnscoredTarget(ofShooterAt: shooter, stand: stand) {
                 currentStand = stand
                 currentShooterIndex = shooter
@@ -1690,6 +1850,165 @@ class ShootViewModel {
         currentStand = numberOfStands
         currentTarget = 0
         currentShooterIndex = 0
+    }
+
+    // MARK: Shared shoot
+
+    private static func scores(fromPatterns patterns: [String], stand: Int) -> [Int]? {
+        guard patterns.indices.contains(stand), patterns[stand].count == targetsPerStand else { return nil }
+        return patterns[stand].map { $0 == "1" ? 1 : ($0 == "0" ? 0 : -1) }
+    }
+
+    private func makeShooter(from entry: RemoteShoot.Entry) -> Shooter {
+        var shooter = Shooter(name: entry.name, numberOfStands: numberOfStands, targetsPerStand: Self.targetsPerStand)
+        for stand in shooter.scores.indices {
+            if let row = Self.scores(fromPatterns: entry.patterns, stand: stand) { shooter.scores[stand] = row }
+        }
+        return shooter
+    }
+
+    /// Replaces the scoresheet with the club's current shoot from the server.
+    func adoptRemote(_ remote: RemoteShoot) {
+        isStarted = false
+        shootSessionId = remote.externalId
+        shootName = remote.name
+        venue = remote.venue ?? ""
+        let parts = (remote.time ?? "00:00").split(separator: ":").compactMap { Int($0) }
+        var components = DateComponents()
+        let day = remote.date.split(separator: "-").compactMap { Int($0) }
+        if day.count == 3, parts.count == 2 {
+            components.year = day[0]; components.month = day[1]; components.day = day[2]
+            components.hour = parts[0]; components.minute = parts[1]
+            if let start = Calendar.current.date(from: components) { shootStart = start }
+        }
+        numberOfStands = remote.stands
+        shooters = remote.shooters.map { makeShooter(from: $0) }
+        currentShooterIndex = nil
+        currentStand = firstOwnedStand
+        currentTarget = 0
+        if !shooters.isEmpty {
+            selectShooter(at: shooters.indices.first { firstUnscoredTarget(ofShooterAt: $0, stand: currentStand) != nil } ?? 0)
+        }
+        // A shoot on the server has always been started.
+        isStarted = true
+        saveSnapshot()
+    }
+
+    /// Brings in what other devices scored on the stands this device does not own, and any
+    /// shooters they added. Stands owned by this device are never overwritten.
+    /// With `includeOwned` (nothing of ours is waiting to send) the server copy wins on every
+    /// stand, so a change made by any other app shows here too.
+    func mergeRemote(_ remote: RemoteShoot, includeOwned: Bool = false) {
+        guard remote.externalId == shootSessionId else { return }
+        func key(_ name: String) -> String { name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        var lastChange: (shooter: Int, stand: Int)?
+        var changedStands = Set<Int>()
+        for entry in remote.shooters {
+            if let index = shooters.firstIndex(where: { key($0.name) == key(entry.name) }) {
+                for stand in shooters[index].scores.indices where includeOwned || !isStandOwned(stand) {
+                    if let row = Self.scores(fromPatterns: entry.patterns, stand: stand), shooters[index].scores[stand] != row {
+                        shooters[index].scores[stand] = row
+                        lastChange = (index, stand)
+                        changedStands.insert(stand)
+                    }
+                }
+            } else if !isAddingShooter {
+                shooters.append(makeShooter(from: entry))
+                if currentShooterIndex == nil { selectShooter(at: 0) }
+            }
+        }
+        // A stand closed by scores that arrived from another device is locked here without asking;
+        // only the device that entered the closing scores is asked to confirm.
+        for stand in changedStands where isStandComplete(stand) && !confirmedStands.contains(stand) {
+            confirmedStands.insert(stand)
+            editingStands[stand] = nil
+        }
+        if let lastChange { followRemoteChange(shooter: lastChange.shooter, stand: lastChange.stand) }
+    }
+
+    /// Keeps the focus magnifier on live action after scores arrive from another device: it
+    /// steps past anything that was just filled in, and when this device has nothing left of its
+    /// own to score it follows the other device to its stand and shooter.
+    private func followRemoteChange(shooter: Int, stand: Int) {
+        guard isStarted, !isComplete, !isAddingShooter else { return }
+
+        if isStandOwned(currentStand), let current = currentShooterIndex,
+           let target = firstUnscoredTarget(ofShooterAt: current, stand: currentStand) {
+            currentTarget = target
+            return
+        }
+
+        let ownedWorkLeft = (0..<numberOfStands).contains { owned in
+            isStandOwned(owned) && shooters.indices.contains { firstUnscoredTarget(ofShooterAt: $0, stand: owned) != nil }
+        }
+        if ownedWorkLeft {
+            if isStandOwned(currentStand) { advanceToNextShooter() }
+            return
+        }
+
+        // Follow the remote scorer: the next shooter still to shoot on that stand, else the one just scored.
+        let order = Array((shooter + 1)..<shooters.count) + Array(0...shooter)
+        let next = order.first { firstUnscoredTarget(ofShooterAt: $0, stand: stand) != nil }
+        currentStand = stand
+        currentShooterIndex = next ?? shooter
+        currentTarget = firstUnscoredTarget(ofShooterAt: currentShooterIndex ?? shooter, stand: stand) ?? 0
+        selectionCount += 1
+    }
+
+    /// After a score is entered by hand, moves on to the next shooter (or stand) once
+    /// that shooter has scored every target on the stand, as spoken scoring does.
+    func advanceIfStandComplete(shooterIndex: Int, stand: Int) {
+        guard shooterIndex == currentShooterIndex, stand == currentStand,
+              firstUnscoredTarget(ofShooterAt: shooterIndex, stand: stand) == nil else { return }
+        advanceToNextShooter()
+        announceStandDone(shooterIndex: shooterIndex, stand: stand)
+    }
+
+    /// Shown briefly when a shooter finishes a stand: what they scored and who is up next.
+    struct StandSummary: Equatable {
+        let id = UUID()
+        let shooter: String
+        let stand: Int
+        let score: Int
+        let total: Int
+        let next: String
+        var needsConfirmation = false
+    }
+    var standSummary: StandSummary?
+
+    /// Scoring input (voice, keys) is ignored until this time, so entries meant for the shooter
+    /// who just finished are not recorded against the next one.
+    private var scoringPausedUntil = Date.distantPast
+    static let summaryDuration: TimeInterval = 3
+    private static let inputSettleTime: TimeInterval = 0.7
+
+    private func announceStandDone(shooterIndex: Int, stand: Int) {
+        guard shooters.indices.contains(shooterIndex), shooters[shooterIndex].scores.indices.contains(stand) else { return }
+        let shooter = shooters[shooterIndex]
+        let next: String
+        if isComplete || currentStand >= numberOfStands || !shooters.indices.contains(currentShooterIndex ?? -1) {
+            next = "All targets scored"
+        } else if let nextIndex = currentShooterIndex {
+            let name = shooters[nextIndex].name.capitalized
+            next = currentStand == stand ? "Next: \(name)" : "Next: \(name) on stand \(currentStand + 1)"
+        } else {
+            next = ""
+        }
+        // The last shooter closing a stand gets the lock question on this same card instead of "Next".
+        let needsConfirmation = isStandOwned(stand) && isStandComplete(stand) && !confirmedStands.contains(stand)
+            && editingStands[stand] == nil && isStarted
+        standSummary = StandSummary(shooter: shooter.name.capitalized, stand: stand + 1, score: shooter.standTotal(stand),
+                                    total: shooter.scores[stand].count, next: needsConfirmation ? "" : next,
+                                    needsConfirmation: needsConfirmation)
+        if needsConfirmation { standAwaitingConfirmation = stand }
+        scoringPausedUntil = Date.now.addingTimeInterval(needsConfirmation ? 3600 : Self.summaryDuration + Self.inputSettleTime)
+        AudioServicesPlaySystemSound(1025)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    func dismissStandSummary() {
+        standSummary = nil
+        scoringPausedUntil = Date.now.addingTimeInterval(Self.inputSettleTime)
     }
 
     /// The first target the shooter has not yet scored on the stand, if any.

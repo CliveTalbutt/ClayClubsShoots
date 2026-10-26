@@ -28,6 +28,34 @@ nonisolated struct ShootUpload: Encodable, Sendable {
     /// False while the shoot is still being scored; the server emails and posts only when true.
     let complete: Bool
     let shooters: [Entry]
+    /// Stand numbers (from 1) this device scores. When set, the server changes only these
+    /// stands so other devices can score the rest of the same shoot; nil replaces the whole shoot.
+    var ownedStands: [Int]? = nil
+    var lockedStands: [Int]? = nil
+}
+
+/// The club's shoot that is still being scored, as other devices have uploaded it.
+nonisolated struct RemoteShoot: Decodable, Sendable {
+    nonisolated struct Entry: Decodable, Sendable {
+        let name: String
+        /// One string per stand: "1" hit, "0" miss, "-" not shot.
+        let patterns: [String]
+    }
+    let externalId: String
+    let name: String
+    let venue: String?
+    let date: String
+    let time: String?
+    let stands: Int
+    let targetsPerStand: Int
+    let shooters: [Entry]
+}
+
+nonisolated struct CurrentShootReply: Decodable, Sendable {
+    nonisolated struct Requested: Decodable, Sendable { let externalId: String; let complete: Bool }
+    let current: RemoteShoot?
+    /// Whether the shoot this device is scoring has been finished (by any device).
+    let requested: Requested?
 }
 
 nonisolated struct ShootUploadReceipt: Decodable, Sendable {
@@ -169,6 +197,19 @@ nonisolated struct ClayShootsClient: Sendable {
         return try JSONDecoder().decode(Reply.self, from: data).shooter
     }
 
+    /// The club's newest unfinished shoot, plus whether `externalId` (this device's shoot) has finished.
+    func currentShoot(externalId: String) async throws -> CurrentShootReply {
+        var components = URLComponents(url: baseURL.appending(path: "api/v1/shoots/current"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "externalId", value: externalId)]
+        guard let url = components?.url else { throw ClayShootsError.invalidURL }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await perform(request)
+        try Self.check(response, data: data, expected: 200)
+        return try JSONDecoder().decode(CurrentShootReply.self, from: data)
+    }
+
     func send(_ upload: ShootUpload) async throws -> ShootUploadReceipt {
         try await send(body: JSONEncoder().encode(upload))
     }
@@ -293,7 +334,7 @@ final class ClayShootsSettings {
 
     /// Picks up a `clayshoots-config.json` dropped into the app's Documents folder
     /// (server address and API key), stores it, then deletes the file.
-    private func importPendingConfig() {
+    func importPendingConfig() {
         guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         let file = dir.appending(path: "clayshoots-config.json")
         guard let data = try? Data(contentsOf: file) else { return }
@@ -357,11 +398,12 @@ extension ShootViewModel {
             var n = 2
             while used.contains(name.lowercased()) { name = "\(base) \(n)"; n += 1 }
             used.insert(name.lowercased())
+            // Stands scored by another device are sent empty; the server ignores them.
             let scores = (0..<numberOfStands).map { stand in
-                shooter.scores.indices.contains(stand) ? min(shooter.standTotal(stand), targets) : 0
+                shooter.scores.indices.contains(stand) && isStandOwned(stand) ? min(shooter.standTotal(stand), targets) : 0
             }
             let patterns = (0..<numberOfStands).map { stand -> String in
-                let row = shooter.scores.indices.contains(stand) ? shooter.scores[stand] : []
+                let row = shooter.scores.indices.contains(stand) && isStandOwned(stand) ? shooter.scores[stand] : []
                 return String((0..<targets).map { t -> Character in
                     let v = t < row.count ? row[t] : -1
                     return v > 0 ? "1" : (v == 0 ? "0" : "-")
@@ -381,7 +423,9 @@ extension ShootViewModel {
             stands: numberOfStands,
             targetsPerStand: targets,
             complete: isComplete || forceComplete,
-            shooters: entries
+            shooters: entries,
+            ownedStands: ownedStands.map { $0.sorted().map { $0 + 1 } },
+            lockedStands: (0..<numberOfStands).filter { isStandLocked($0) && isStandOwned($0) }.map { $0 + 1 }
         )
     }
 

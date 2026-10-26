@@ -120,6 +120,16 @@ footer{text-align:center;color:var(--muted);padding:24px}
 .club-dialog-head .btn:hover{background:#f59e0b;border-color:#f59e0b;color:#111}
 .nav-shoot{color:var(--text,#e8eef2);font-weight:600;max-width:260px;overflow:hidden;text-overflow:ellipsis}
 /* Same yellow flash as the phone app: held briefly, then eased out. */
-@keyframes value-flash{0%,64%{background:rgba(250,204,21,.8);color:#111}100%{background:transparent}}
-.value-flash{animation:value-flash .55s ease-out}
+@keyframes value-flash{0%,64%{background:rgba(255,214,10,.8);color:#111;font-weight:700;box-shadow:0 0 12px rgba(255,214,10,.9)}100%{background:transparent}}
+.value-flash{animation:value-flash .825s ease-out}
+.value-flash .hit-score{color:var(--ok);font-weight:700}
+.value-flash .hit-score,.value-flash .miss-score{background:#ffd60a;border-radius:4px;box-shadow:0 0 0 3px #ffd60a;animation:value-flash-hit .825s ease-out}
+@keyframes value-flash-hit{0%,64%{background:#ffd60a;box-shadow:0 0 0 3px #ffd60a}100%{background:transparent;box-shadow:0 0 0 3px transparent}}
 @media (prefers-reduced-motion:reduce){.value-flash{animation:none}}
+/* Fixed column widths so live updates never shift the layout (stand scores go up to 10). */
+#results-table{table-layout:fixed;min-width:640px}
+#results-table th.num:not([data-sort-column]){width:3.5em;text-align:center}
+#results-table td.num:not(:nth-last-child(-n+4)){text-align:center}
+#results-table th[data-sort-column].num{width:6em}
+#results-table th.num:last-child{width:9em}
+#results-table th:first-child{width:11em}

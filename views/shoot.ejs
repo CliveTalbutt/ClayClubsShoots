@@ -7,7 +7,7 @@
   <table>
     <thead><tr>
       <th><a href="?sort=name">Shooter</a></th>
-      <% for (let i = 1; i <= shoot.stands; i++) { %><th class="num">S<%= i %></th><% } %>
+      <% for (let i = 1; i <= shoot.stands; i++) { %><th class="num">S<%= i %><% if (lockedStands.includes(i)) { %> <span role="img" aria-label="locked" title="Stand locked">🔒</span><% } %></th><% } %>
       <th class="num"><a href="?sort=total">Total / <%= max %></a></th>
     </tr></thead>
     <tbody>

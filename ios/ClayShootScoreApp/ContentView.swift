@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var isShowingSettings = false
     @State private var isShowingRoster = false
     @State private var serverSettings = ClayShootsSettings()
+    @State private var lastLocalEdit = Date.distantPast
 
     /// Keyboard focus sits on the score table so the Y and X keys score the
     /// current target without a text field swallowing them.
@@ -95,16 +96,33 @@ struct ContentView: View {
             .animation(.snappy, value: vm.isComplete)
             .animation(.snappy, value: vm.isManualMode)
             .animation(.snappy, value: vm.shooters.isEmpty)
+            .overlay(alignment: .center) {
+                if let summary = vm.standSummary {
+                    standSummaryCard(summary)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        .task(id: summary.id) {
+                            try? await Task.sleep(for: .seconds(ShootViewModel.summaryDuration))
+                            if !Task.isCancelled, !summary.needsConfirmation, vm.standSummary?.id == summary.id { vm.dismissStandSummary() }
+                        }
+                }
+            }
+            .animation(.snappy, value: vm.standSummary)
             .onAppear {
+                serverSettings.importPendingConfig()
                 isScoreTableFocused = true
                 // A new shoot starts at "Who is shooting?"; a resumed one shows its shooters and scores.
-                if vm.shooters.isEmpty { isShowingRoster = true }
+                // If the club already has a shoot running, go straight to it instead.
+                if vm.shooters.isEmpty { Task { await openCurrentShootOrRoster() } }
                 // Listening is always on: start as soon as the app is showing.
                 vm.resumeListening()
             }
             // Once names have been entered, hand focus back so scoring keys work.
-            .task(id: liveSignature) { await syncLive() }
+            .task(id: liveSignature) {
+                lastLocalEdit = .now
+                await syncLive()
+            }
             .task { await followRoster() }
+            .task(id: "\(serverSettings.serverURL)|\(serverSettings.apiKey)|\(scenePhase == .active)") { await followCurrentShoot() }
             .task { await flushOutbox() }
             .onChange(of: vm.isAddingShooter) { _, isAdding in
                 if !isAdding { isScoreTableFocused = true }
@@ -118,24 +136,41 @@ struct ContentView: View {
                     vm.saveSnapshot()
                     vm.stopListeningForBackground()
                 case .active:
+                    serverSettings.importPendingConfig()
                     vm.resumeListening()
                     Task { await flushOutbox() }
                 default:
                     break
                 }
             }
-            .onChange(of: vm.snapshotSignature) { _, _ in vm.saveSnapshot() }
+            .onChange(of: vm.snapshotSignature) { _, _ in
+                vm.saveSnapshot()
+                vm.evaluateStandCompletion()
+            }
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(1))
+                    vm.evaluateStandCompletion()
+                }
+            }
+            .alert("Stand \((vm.standAwaitingConfirmation ?? 0) + 1) complete?",
+                   isPresented: Binding(get: { vm.standAwaitingConfirmation != nil && vm.standSummary?.needsConfirmation != true }, set: { _ in })) {
+                Button("Yes, lock it") { vm.answerStandConfirmation(complete: true) }
+                Button("No, keep editing", role: .cancel) { vm.answerStandConfirmation(complete: false) }
+            } message: {
+                Text("Every target is scored. Locking stops any further changes. If you keep editing, the stand locks after \(Int(ShootViewModel.editLockDelay)) seconds without changes.")
+            }
             #if os(macOS)
             .frame(minWidth: 900, minHeight: 500)
             #endif
             .background(backgroundGradient.ignoresSafeArea())
             // On iPhone the header card already shows the editable shoot name, so
             // the navigation bar is left without a title to save vertical space.
-            .navigationTitle(isCompact ? "" : vm.title)
-            .toolbarTitleDisplayMode(isCompact ? .inline : .automatic)
+            .navigationTitle("")
+            .toolbarTitleDisplayMode(.inline)
             .confirmationDialog("Start a new shoot?", isPresented: $isConfirmingNewShoot, titleVisibility: .visible) {
                 if !vm.shooters.isEmpty {
-                    Button("Submit results, then new shoot") { completeShoot(); showRosterSoon() }
+                    Button("Submit results, then new shoot") { completeShoot(); vm.startNewShoot(); showRosterSoon() }
                 }
                 Button(vm.shooters.isEmpty ? "New shoot" : "Discard this shoot and start new", role: vm.shooters.isEmpty ? nil : .destructive) {
                     vm.startNewShoot()
@@ -152,11 +187,7 @@ struct ContentView: View {
                 Text("Any targets not yet scored count as misses. The results are sent to the server and a new shoot is started.")
             }
             .toolbar {
-                if isCompact {
-                    compactControlPanel
-                } else {
-                    controlPanel
-                }
+                compactControlPanel
             }
             // On iPhone the help button lives inside the overflow menu, where a
             // popover has nothing to anchor to, so the help is shown as a sheet.
@@ -201,6 +232,7 @@ struct ContentView: View {
         ToolbarItemGroup {
             rosterButton
             addShootersButton
+            startShootButton
             modeButton
             listenButton
             serverSettingsButton
@@ -252,6 +284,7 @@ struct ContentView: View {
         ToolbarItemGroup {
             rosterButton
             addShootersButton
+            startShootButton
             modeButton
             serverSettingsButton
             Menu {
@@ -295,13 +328,18 @@ struct ContentView: View {
     }
 
     /// Closes the shoot as if every target had been scored (unscored targets count as
-    /// misses), queues the final results for the server, and clears the sheet for a new shoot.
+    /// misses), queues the final results for the server and leaves the final results on screen,
+    /// with scoring locked, until New Shoot is pressed.
     private func completeShoot() {
+        vm.finishShoot()
+        queueFinalResults()
+        exportMessage = "Shoot completed: submitting results…"
+    }
+
+    private func queueFinalResults() {
         guard let upload = vm.makeUpload(externalId: vm.shootSessionId, forceComplete: true),
               let body = try? JSONEncoder().encode(upload) else { return }
         UploadOutbox.save(id: upload.externalId, body: body)
-        vm.startNewShoot()
-        exportMessage = "Shoot completed: submitting results…"
         Task { await flushOutbox() }
     }
 
@@ -309,7 +347,8 @@ struct ContentView: View {
     /// clears the sheet and opens "Who is shooting?" for the next shoot.
     private var newShootButton: some View {
         Button {
-            completeShoot()
+            queueFinalResults()
+            vm.startNewShoot()
             isShowingRoster = true
         } label: {
             Label("New Shoot", systemImage: "plus.circle.fill")
@@ -358,7 +397,7 @@ struct ContentView: View {
             Label("Membership", systemImage: "person.3.fill")
         }
         .help("Choose who is shooting from the club's registered shooters")
-        .disabled(vm.isComplete)
+        .disabled(vm.isComplete || vm.isStarted)
     }
 
     private var addShootersButton: some View {
@@ -368,7 +407,27 @@ struct ContentView: View {
             Label("Add Shooters", systemImage: "person.badge.plus")
         }
         .help("Add shooters by saying their names")
-        .disabled(vm.isAddingShooter || vm.isComplete || vm.isFull)
+        .disabled(vm.isAddingShooter || vm.isComplete || vm.isFull || vm.isStarted)
+    }
+
+    /// Shown once shooters are chosen and until the shoot begins; after it nothing about the shooters changes.
+    @ViewBuilder private var startShootButton: some View {
+        if !vm.isStarted, !vm.shooters.isEmpty, !vm.hasMinimumShooters {
+            Label("Add at least \(ShootViewModel.minimumShooters) shooters to start (\(vm.shooters.count) so far)",
+                  systemImage: "person.2.fill")
+                .font(.footnote)
+                .foregroundStyle(.orange)
+        }
+        if !vm.isStarted, !vm.shooters.isEmpty {
+            Button {
+                vm.startShoot()
+            } label: {
+                Label("Start Shoot", systemImage: "play.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+            .disabled(!vm.hasMinimumShooters)
+        }
     }
 
     /// Shows that the app is always listening. The microphone bounces every time
@@ -407,7 +466,7 @@ struct ContentView: View {
     /// Changes whenever anything that is uploaded changes, so the task below
     /// restarts (and so debounces) on every score, name or setting change.
     private var liveSignature: String {
-        guard serverSettings.client != nil, vm.hasAnyScore,
+        guard serverSettings.client != nil, vm.isStarted,
               let upload = vm.makeUpload(externalId: vm.shootSessionId),
               let data = try? JSONEncoder().encode(upload) else { return "" }
         return String(decoding: data, as: UTF8.self)
@@ -425,15 +484,61 @@ struct ContentView: View {
         guard let upload = vm.makeUpload(externalId: vm.shootSessionId),
               let body = try? JSONEncoder().encode(upload) else { return }
         UploadOutbox.save(id: upload.externalId, body: body)
-        try? await Task.sleep(for: .milliseconds(400))
+        try? await Task.sleep(for: .milliseconds(100))
         await flushOutbox()
+    }
+
+    /// Keeps this device on the club's current shoot: loads it at startup and every few seconds
+    /// brings in the stands other devices have scored. If the shoot was finished elsewhere this
+    /// device starts afresh, and a blank scoresheet picks up the shoot another device started.
+    private func followCurrentShoot() async {
+        while !Task.isCancelled {
+            if scenePhase == .active, let client = serverSettings.client {
+                await refreshCurrentShoot(client)
+            }
+            try? await Task.sleep(for: .milliseconds(1000))
+        }
+    }
+
+    private func openCurrentShootOrRoster() async {
+        if let client = serverSettings.client,
+           let reply = try? await client.currentShoot(externalId: vm.shootSessionId),
+           let current = reply.current, vm.shooters.isEmpty {
+            vm.adoptRemote(current)
+            exportMessage = "Joined the club's current shoot: \(current.name)."
+        } else if vm.shooters.isEmpty {
+            isShowingRoster = true
+        }
+    }
+
+    private func refreshCurrentShoot(_ client: ClayShootsClient) async {
+        guard let reply = try? await client.currentShoot(externalId: vm.shootSessionId), !Task.isCancelled else { return }
+        // Only unsent changes to the shoot on screen hold the device back; a stale entry for some
+        // other shoot must never stop it joining the club's current one.
+        let unsent = UploadOutbox.pending.contains { $0.id == vm.shootSessionId }
+        // A roster opened with nothing chosen yet gives way to a shoot another device has started.
+        if isShowingRoster, vm.shooters.isEmpty, reply.current != nil { isShowingRoster = false }
+        let choosingShooters = vm.isAddingShooter || isShowingRoster
+        // Another device completed this shoot: show the final results here too, locked.
+        if let mine = reply.requested, mine.complete, !vm.isComplete, !unsent, vm.isStarted {
+            vm.finishShoot()
+        }
+        guard let current = reply.current else { return }
+        if current.externalId == vm.shootSessionId {
+            let idle = Date.now.timeIntervalSince(lastLocalEdit) > 3
+            vm.mergeRemote(current, includeOwned: !unsent && idle)
+        } else if !choosingShooters, !unsent || !vm.isStarted {
+            // The club has one current shoot (the newest active one) and every device shows it.
+            vm.adoptRemote(current)
+            exportMessage = "Joined the club's current shoot: \(current.name)."
+        }
     }
 
     /// Sends everything waiting in the outbox, retrying until the server
     /// answers. Each entry is the latest full scoresheet for a shoot, so a
     /// later change simply replaces an unsent one and nothing is lost.
     private func flushOutbox() async {
-        var delay = 5
+        var delay = 2
         while !Task.isCancelled, let client = serverSettings.client, UploadOutbox.count > 0 {
             var failed = false
             for item in UploadOutbox.pending {
@@ -460,7 +565,7 @@ struct ContentView: View {
             }
             if !failed { return }
             try? await Task.sleep(for: .seconds(delay))
-            delay = min(delay * 2, 20)
+            delay = min(delay * 2, 6)
         }
     }
 
@@ -470,6 +575,7 @@ struct ContentView: View {
                 Text("\(count)").tag(count)
             }
         }
+        .disabled(vm.isStarted)
     }
 
     // MARK: - Header
@@ -478,25 +584,57 @@ struct ContentView: View {
     /// the toolbar beside the buttons instead, so nothing is shown here.
     @ViewBuilder
     private var headerCard: some View {
-        if !isCompact {
-            shootNameAndDate
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 4)
-        }
+        EmptyView()
     }
 
     private var shootNameAndDate: some View {
-        VStack(alignment: .leading, spacing: isCompact ? 0 : 4) {
+        VStack(alignment: .leading, spacing: 0) {
             TextField("Shoot name", text: $vm.shootName)
                 .textFieldStyle(.plain)
-                .font(isCompact ? .headline : .largeTitle.bold())
+                .font(.headline)
                 .help("Click to edit the shoot name")
 
             DatePicker("Date", selection: $vm.shootStart, displayedComponents: [.date])
                 .labelsHidden()
-                .font(isCompact ? .caption2 : .subheadline)
+                .font(.caption2)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func standSummaryCard(_ summary: ShootViewModel.StandSummary) -> some View {
+        VStack(spacing: 6) {
+            Text("\(summary.shooter) — Stand \(summary.stand)")
+                .font(.headline)
+            Text("\(summary.score) / \(summary.total)")
+                .font(.system(size: 44, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.green)
+            if !summary.next.isEmpty {
+                Text(summary.next)
+                    .font(.title3.weight(.semibold))
+            }
+            if summary.needsConfirmation {
+                Text("Stand \(summary.stand) is complete. Lock it?")
+                    .font(.title3.weight(.semibold))
+                HStack(spacing: 12) {
+                    Button("No, keep editing") { vm.answerStandConfirmation(complete: false) }
+                        .buttonStyle(.bordered)
+                    Button("Yes, lock it") { vm.answerStandConfirmation(complete: true) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                }
+                .padding(.top, 4)
+                Text("If you keep editing, it locks after \(Int(ShootViewModel.editLockDelay)) seconds without changes.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 18)
+        .background(.regularMaterial, in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.green, lineWidth: 1))
+        .shadow(radius: 12)
+        .onTapGesture { if !summary.needsConfirmation { vm.dismissStandSummary() } }
     }
 
     // MARK: - Add shooters
@@ -567,17 +705,21 @@ struct ContentView: View {
     }
 
     private var finishAddingButton: some View {
-        Button("Finish") {
-            vm.finishAddingShooters()
+        Button("Start Shoot") {
+            if vm.shooters.isEmpty { vm.finishAddingShooters() } else { vm.startShoot() }
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.borderedProminent)
+        .tint(.green)
+        .disabled(!vm.shooters.isEmpty && !vm.hasMinimumShooters)
         .keyboardShortcut(.cancelAction)
     }
 
     private var addShooterCount: some View {
-        Text("\(vm.shooters.count) of \(ShootViewModel.maxShooters)")
+        Text(vm.hasMinimumShooters
+             ? "\(vm.shooters.count) of \(ShootViewModel.maxShooters)"
+             : "\(vm.shooters.count) of \(ShootViewModel.maxShooters) · min \(ShootViewModel.minimumShooters)")
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(vm.hasMinimumShooters ? Color.secondary : Color.orange)
             .monospacedDigit()
     }
 

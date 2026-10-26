@@ -46,6 +46,18 @@ struct SendToServerView: View {
                 }
 
                 Section {
+                    TextField("All stands", text: $vm.ownedStandsText)
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                } header: {
+                    Text("Stands this device scores")
+                } footer: {
+                    Text("Devices connected to the same club share the current shoot. Give each device different stands, e.g. 1-3 on one and 4-6 on another. Leave blank to score every stand on this device alone.")
+                }
+
+                Section {
                     TextField("Your email address", text: $settings.memberEmail)
                         .autocorrectionDisabled()
                         #if os(iOS)

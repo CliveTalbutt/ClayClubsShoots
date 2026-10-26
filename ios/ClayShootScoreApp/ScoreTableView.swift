@@ -112,7 +112,7 @@ struct ScoreTableView: View {
                 .frame(width: nameWidth, alignment: .leading)
                 .offset(x: tablePadding, y: tablePadding - visibleRect.minY)
             ForEach(vm.shooters.indices, id: \.self) { index in
-                if let row = rowFrames[vm.shooters[index].id] {
+                if vm.shooters.indices.contains(index), let row = rowFrames[vm.shooters[index].id] {
                     nameCell(index)
                         .frame(width: nameWidth, height: row.height, alignment: .leading)
                         .background(index == vm.currentShooterIndex && !vm.isComplete ? Color.accentColor.opacity(0.15) : .clear)
@@ -249,7 +249,14 @@ struct ScoreTableView: View {
 
             ForEach(0..<standCount, id: \.self) { stand in
                 HStack(spacing: 2) {
-                    Text("Stand \(stand + 1)")
+                    HStack(spacing: 3) {
+                        Text("Stand \(stand + 1)")
+                        if vm.isStandLocked(stand) {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.green)
+                        }
+                    }
                         .font(headerFont)
                         .foregroundStyle(stand == vm.currentStand && !vm.isComplete ? Color.accentColor : .primary)
                         .frame(width: standCellsWidth(for: stand))
@@ -342,10 +349,12 @@ struct ScoreTableView: View {
 
     /// The 10 target cells and stand total for one shooter on one stand.
     private func standCells(shooterIndex: Int, stand: Int) -> some View {
-        let shooter = vm.shooters[shooterIndex]
-        let standScores = shooter.scores.indices.contains(stand) ? shooter.scores[stand] : []
+        // The shooter list can shrink (new shoot) before SwiftUI re-evaluates this row.
+        let scores = vm.shooters.indices.contains(shooterIndex) ? vm.shooters[shooterIndex].scores : []
+        let standScores = scores.indices.contains(stand) ? scores[stand] : []
         let isCurrentStand = stand == vm.currentStand && !vm.isComplete
         let isActiveCell = isCurrentStand && shooterIndex == vm.currentShooterIndex
+        let isLocked = vm.isStandLocked(stand)
 
         return HStack(spacing: 2) {
             HStack(spacing: targetCellSpacing) {
@@ -365,12 +374,13 @@ struct ScoreTableView: View {
             .padding(2)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(isCurrentStand ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: isActiveCell ? 2 : 1)
+                    .stroke(isLocked ? Color.green : isCurrentStand ? Color.accentColor : Color.gray.opacity(0.3),
+                            lineWidth: isActiveCell ? 2 : 1)
             )
             .animation(.snappy, value: isActiveCell)
             .animation(.snappy, value: isCurrentStand)
 
-            Text("\(shooter.standTotal(stand))")
+            Text("\(vm.shooters.indices.contains(shooterIndex) ? vm.shooters[shooterIndex].standTotal(stand) : 0)")
                 .font(totalFont.monospacedDigit())
                 .bold()
                 .frame(width: standTotalWidth)
@@ -430,6 +440,10 @@ struct ScoreTableView: View {
         guard vm.shooters.indices.contains(shooterIndex),
               vm.shooters[shooterIndex].scores.indices.contains(stand),
               vm.shooters[shooterIndex].scores[stand].indices.contains(target) else { return }
+        guard vm.isStandOwned(stand) else {
+            vm.errorMessage = "Stand \(stand + 1) is scored by another device."
+            return
+        }
         let next: Int
         switch current {
         case 1: next = 0        // tick -> cross
@@ -448,6 +462,8 @@ struct ScoreTableView: View {
             return
         }
         vm.shooters[shooterIndex].scores[stand][target] = next
+        // Only a newly entered score moves on; correcting an existing one stays put.
+        if current < 0 { vm.advanceIfStandComplete(shooterIndex: shooterIndex, stand: stand) }
     }
 }
 
