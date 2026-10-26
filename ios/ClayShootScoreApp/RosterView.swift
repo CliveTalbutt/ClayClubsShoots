@@ -51,6 +51,13 @@ struct RosterView: View {
                         .foregroundStyle(.orange)
                 }
 
+                Section("Shoot setup") {
+                    Picker("Number of stands", selection: $vm.numberOfStands) {
+                        ForEach(ShootViewModel.standOptions, id: \.self) { Text("\($0)").tag($0) }
+                    }
+                    .disabled(vm.isStarted)
+                }
+
                 Section("Registered shooters") {
                     if roster.isEmpty {
                         Text(isLoading ? "Loading…" : "No registered shooters yet. Add one below.")

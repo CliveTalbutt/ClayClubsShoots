@@ -88,14 +88,11 @@ struct ScoreTableView: View {
         CGFloat(targetCount) * cellWidth(for: stand) + CGFloat(targetCount - 1) * targetCellSpacing + 4
     }
 
-    /// The current stand is widened for every shooter, and the current shooter's cells on it are
-    /// taller and larger still, so entries are easy to see and tap. Both shrink back when the
-    /// shooter or stand changes.
-    private let expandedCellWidth: CGFloat = 24
-    private let expandedCellHeight: CGFloat = 35
+    /// The current shooter and stand are marked with a green frame; cells are never resized.
 
-    private func isCurrentStand(_ stand: Int) -> Bool { stand == vm.currentStand && !vm.isComplete }
-    private func cellWidth(for stand: Int) -> CGFloat { isCurrentStand(stand) ? expandedCellWidth : targetCellWidth }
+    private func isCurrentStand(_ stand: Int) -> Bool { stand == vm.currentStand && !vm.isFinished }
+    private func cellWidth(for stand: Int) -> CGFloat { targetCellWidth }
+    private let currentColor = Color.green
 
     /// The names sit in a fixed layer above the table, so stands scrolling sideways
     /// are hidden behind it while it follows the vertical scroll exactly.
@@ -115,7 +112,7 @@ struct ScoreTableView: View {
                 if vm.shooters.indices.contains(index), let row = rowFrames[vm.shooters[index].id] {
                     nameCell(index)
                         .frame(width: nameWidth, height: row.height, alignment: .leading)
-                        .background(index == vm.currentShooterIndex && !vm.isComplete ? Color.accentColor.opacity(0.15) : .clear)
+                        .background(index == vm.currentShooterIndex && !vm.isFinished ? currentColor.opacity(0.2) : .clear)
                         .offset(x: row.minX, y: row.minY - visibleRect.minY)
                 }
             }
@@ -222,7 +219,7 @@ struct ScoreTableView: View {
 
         // Also bring the current stand's columns into view horizontally.
         var targetX = visibleRect.minX
-        if !vm.isComplete, let stand = standFrames[vm.currentStand] {
+        if !vm.isFinished, let stand = standFrames[vm.currentStand] {
             // The pinned name column covers the left of the viewport.
             let inset = tablePadding + nameWidth + 6
             let viewWidth = visibleRect.width - inset
@@ -258,7 +255,7 @@ struct ScoreTableView: View {
                         }
                     }
                         .font(headerFont)
-                        .foregroundStyle(stand == vm.currentStand && !vm.isComplete ? Color.accentColor : .primary)
+                        .foregroundStyle(stand == vm.currentStand && !vm.isFinished ? currentColor : .primary)
                         .frame(width: standCellsWidth(for: stand))
 
                     // Blank space above the stand total column keeps the header aligned
@@ -274,7 +271,7 @@ struct ScoreTableView: View {
                 }
             }
 
-            if vm.isComplete {
+            if vm.isFinished {
                 Text("Place")
                     .font(headerFont)
                     .frame(width: placeWidth)
@@ -286,7 +283,7 @@ struct ScoreTableView: View {
 
     private func shooterRow(_ shooterIndex: Int) -> some View {
         let shooter = vm.shooters[shooterIndex]
-        let isCurrentShooter = shooterIndex == vm.currentShooterIndex && !vm.isComplete
+        let isCurrentShooter = shooterIndex == vm.currentShooterIndex && !vm.isFinished
 
         return HStack(spacing: 6) {
             Color.clear.frame(width: nameWidth, height: 1)
@@ -295,7 +292,7 @@ struct ScoreTableView: View {
                 standCells(shooterIndex: shooterIndex, stand: stand)
             }
 
-            if vm.isComplete {
+            if vm.isFinished {
                 placeLabel(for: shooter)
                     .frame(width: placeWidth)
             }
@@ -308,7 +305,7 @@ struct ScoreTableView: View {
     /// One name in the pinned column, drawn above the scrolling table.
     private func nameCell(_ shooterIndex: Int) -> some View {
         let shooter = vm.shooters[shooterIndex]
-        let isCurrentShooter = shooterIndex == vm.currentShooterIndex && !vm.isComplete
+        let isCurrentShooter = shooterIndex == vm.currentShooterIndex && !vm.isFinished
         return HStack(spacing: 4) {
     Image(systemName: "arrowtriangle.right.fill")
         .font(.caption2)
@@ -352,16 +349,15 @@ struct ScoreTableView: View {
         // The shooter list can shrink (new shoot) before SwiftUI re-evaluates this row.
         let scores = vm.shooters.indices.contains(shooterIndex) ? vm.shooters[shooterIndex].scores : []
         let standScores = scores.indices.contains(stand) ? scores[stand] : []
-        let isCurrentStand = stand == vm.currentStand && !vm.isComplete
+        let isCurrentStand = stand == vm.currentStand && !vm.isFinished
         let isActiveCell = isCurrentStand && shooterIndex == vm.currentShooterIndex
-        let isLocked = vm.isStandLocked(stand)
 
         return HStack(spacing: 2) {
             HStack(spacing: targetCellSpacing) {
                 ForEach(0..<targetCount, id: \.self) { target in
                     let score = target < standScores.count ? standScores[target] : -1
-                    cellSymbol(for: score, large: isActiveCell)
-                        .frame(width: cellWidth(for: stand), height: isActiveCell ? expandedCellHeight : targetCellHeight)
+                    cellSymbol(for: score)
+                        .frame(width: cellWidth(for: stand), height: targetCellHeight)
                         .background(cellColor(for: score))
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                         .modifier(FlashOnChange(value: score))
@@ -374,8 +370,8 @@ struct ScoreTableView: View {
             .padding(2)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(isLocked ? Color.green : isCurrentStand ? Color.accentColor : Color.gray.opacity(0.3),
-                            lineWidth: isActiveCell ? 2 : 1)
+                    .stroke(isActiveCell ? currentColor : isCurrentStand ? currentColor.opacity(0.55) : Color.gray.opacity(0.3),
+                            lineWidth: isActiveCell ? 2.5 : 1)
             )
             .animation(.snappy, value: isActiveCell)
             .animation(.snappy, value: isCurrentStand)

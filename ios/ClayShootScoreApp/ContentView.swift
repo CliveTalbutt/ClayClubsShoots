@@ -75,14 +75,14 @@ struct ContentView: View {
                     // it after typing in the shoot name or a shooter's name.
                     .simultaneousGesture(TapGesture().onEnded { isScoreTableFocused = true })
 
-                if vm.isComplete {
+                if vm.isFinished {
                     podiumView
                         .transition(.scale(scale: 0.95).combined(with: .opacity))
                 }
 
                 statusBar
 
-                if vm.isComplete {
+                if vm.isFinished {
                     newShootButton
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 } else if vm.isManualMode, !vm.shooters.isEmpty, !vm.isAddingShooter {
@@ -93,16 +93,25 @@ struct ContentView: View {
             .padding(.horizontal, isCompact ? 12 : 20)
             .padding(.vertical, isCompact ? 8 : 20)
             .animation(.snappy, value: vm.isAddingShooter)
-            .animation(.snappy, value: vm.isComplete)
+            .animation(.snappy, value: vm.isFinished)
             .animation(.snappy, value: vm.isManualMode)
             .animation(.snappy, value: vm.shooters.isEmpty)
             .overlay(alignment: .center) {
                 if let summary = vm.standSummary {
+                    // A timed card goes away on a tap anywhere; the tap is swallowed here so it
+                    // never reaches the Hit/Miss buttons or the table underneath.
+                    if !summary.needsConfirmation {
+                        Color.black.opacity(0.001)
+                            .ignoresSafeArea()
+                            .contentShape(Rectangle())
+                            .onTapGesture { if summary.possible != nil { vm.standSummary = nil } else { vm.dismissStandSummary() } }
+                    }
                     standSummaryCard(summary)
                         .transition(.scale(scale: 0.9).combined(with: .opacity))
                         .task(id: summary.id) {
-                            try? await Task.sleep(for: .seconds(ShootViewModel.summaryDuration))
-                            if !Task.isCancelled, !summary.needsConfirmation, vm.standSummary?.id == summary.id { vm.dismissStandSummary() }
+                            try? await Task.sleep(for: .seconds(summary.possible != nil ? 2 : ShootViewModel.summaryDuration))
+                            guard !Task.isCancelled, !summary.needsConfirmation, vm.standSummary?.id == summary.id else { return }
+                            if summary.possible != nil { vm.standSummary = nil } else { vm.dismissStandSummary() }
                         }
                 }
             }
@@ -240,18 +249,6 @@ struct ContentView: View {
 
         ToolbarSpacer(.fixed)
 
-        ToolbarItem {
-            Menu {
-                standsPicker
-            } label: {
-                Label("^[\(vm.numberOfStands) Stand](inflect: true)", systemImage: "square.grid.3x3")
-                    .labelStyle(.titleAndIcon)
-            }
-            .help("Choose how many stands are in the shoot")
-        }
-
-        ToolbarSpacer(.fixed)
-
         ToolbarItem { newShootToolbarButton.help("Start a new shoot") }
 
         ToolbarSpacer(.fixed)
@@ -287,11 +284,6 @@ struct ContentView: View {
             startShootButton
             modeButton
             serverSettingsButton
-            Menu {
-                standsPicker
-            } label: {
-                Label("Stands: \(vm.numberOfStands)", systemImage: "square.grid.3x3")
-            }
             Button {
                 isShowingHelp = true
             } label: {
@@ -520,7 +512,7 @@ struct ContentView: View {
         if isShowingRoster, vm.shooters.isEmpty, reply.current != nil { isShowingRoster = false }
         let choosingShooters = vm.isAddingShooter || isShowingRoster
         // Another device completed this shoot: show the final results here too, locked.
-        if let mine = reply.requested, mine.complete, !vm.isComplete, !unsent, vm.isStarted {
+        if let mine = reply.requested, mine.complete, !vm.isFinished, !unsent, vm.isStarted {
             vm.finishShoot()
         }
         guard let current = reply.current else { return }
@@ -569,12 +561,14 @@ struct ContentView: View {
         }
     }
 
-    private var standsPicker: some View {
-        Picker("Number of stands", selection: $vm.numberOfStands) {
+    /// Part of setting up a shoot; it starts at the number used last time and is fixed once the shoot starts.
+    private var standsSetupMenu: some View {
+        Picker("Stands", selection: $vm.numberOfStands) {
             ForEach(ShootViewModel.standOptions, id: \.self) { count in
                 Text("\(count)").tag(count)
             }
         }
+        .pickerStyle(.menu)
         .disabled(vm.isStarted)
     }
 
@@ -605,6 +599,15 @@ struct ContentView: View {
         VStack(spacing: 6) {
             Text("\(summary.shooter) — Stand \(summary.stand)")
                 .font(.headline)
+            if let possible = summary.possible {
+                Text("Possible \(possible)")
+                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.green)
+                Text("if the final pair is hit (\(summary.score) so far)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
             Text("\(summary.score) / \(summary.total)")
                 .font(.system(size: 44, weight: .bold, design: .rounded))
                 .monospacedDigit()
@@ -612,6 +615,7 @@ struct ContentView: View {
             if !summary.next.isEmpty {
                 Text(summary.next)
                     .font(.title3.weight(.semibold))
+            }
             }
             if summary.needsConfirmation {
                 Text("Stand \(summary.stand) is complete. Lock it?")
@@ -634,7 +638,7 @@ struct ContentView: View {
         .background(.regularMaterial, in: .rect(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.green, lineWidth: 1))
         .shadow(radius: 12)
-        .onTapGesture { if !summary.needsConfirmation { vm.dismissStandSummary() } }
+        .onTapGesture { if summary.possible != nil { vm.standSummary = nil } else if !summary.needsConfirmation { vm.dismissStandSummary() } }
     }
 
     // MARK: - Add shooters
@@ -651,6 +655,7 @@ struct ContentView: View {
                         addShooterPrompt
                             .font(.subheadline)
                         Spacer()
+                        standsSetupMenu
                         addShooterCount
                     }
 
@@ -669,6 +674,7 @@ struct ContentView: View {
                     addPendingButton
                     finishAddingButton
                     Spacer()
+                    standsSetupMenu
                     addShooterCount
                 }
             }

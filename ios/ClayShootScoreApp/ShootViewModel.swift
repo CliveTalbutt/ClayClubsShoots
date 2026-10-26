@@ -465,10 +465,16 @@ class ShootViewModel {
         !shooters.isEmpty && shooters.allSatisfy(\.isComplete)
     }
 
+    /// The shoot is over for display purposes only once every target is scored and the last stand
+    /// is locked, so the results and podium never appear while a stand can still be edited.
+    var isFinished: Bool {
+        isComplete && (0..<numberOfStands).allSatisfy { isStandLocked($0) }
+    }
+
     /// Finishing position for each shooter, using competition ranking so that
     /// equal totals share a place. Empty until the shoot is complete.
     var placings: [Shooter.ID: Int] {
-        guard isComplete else { return [:] }
+        guard isFinished else { return [:] }
         let ranked = shooters.sorted { $0.grandTotal > $1.grandTotal }
         var result: [Shooter.ID: Int] = [:]
         var lastTotal: Int?
@@ -730,7 +736,8 @@ class ShootViewModel {
         standAwaitingConfirmation = (0..<numberOfStands).first {
             isStandOwned($0) && isStandComplete($0) && !confirmedStands.contains($0) && editingStands[$0] == nil
         }
-        if standAwaitingConfirmation != nil {
+        if let pending = standAwaitingConfirmation {
+            speaker.say("Stand \(pending + 1) is complete. Lock it?")
             AudioServicesPlaySystemSound(1007)
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
         }
@@ -999,7 +1006,7 @@ class ShootViewModel {
         // ducking options such as `.duckOthers`, and asking for one makes
         // `setCategory` throw (OSStatus -50) before the microphone ever starts.
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .default)
+        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try session.setActive(true, options: .notifyOthersOnDeactivation)
         isAudioSessionActive = true
         if AVAudioApplication.shared.isInputMuted {
@@ -1268,6 +1275,10 @@ class ShootViewModel {
     private func handleNameSpeech(_ text: String, isFinal: Bool) {
         let words = text.split(separator: " ").map(String.init)
         latestWordCount = words.count
+        if speaker.isBusy {
+            processedWordCount = words.count
+            return
+        }
         if words.count > processedWordCount { restartNameIdleTimer() }
 
         var newWords = words.count > processedWordCount ? Array(words[processedWordCount...]) : []
@@ -1358,6 +1369,11 @@ class ShootViewModel {
     func handleSpeech(_ text: String) {
         let words = text.split(separator: " ").map(String.init)
         latestWordCount = words.count
+        // The app's own spoken dialogues are picked up by the microphone; never score them.
+        if speaker.isBusy {
+            processedWordCount = words.count
+            return
+        }
         if isManualMode {
             processedWordCount = words.count
             return
@@ -1807,6 +1823,9 @@ class ShootViewModel {
 
         currentTarget += 1
 
+        if currentTarget == Self.targetsPerStand - 2, standSummary?.needsConfirmation != true {
+            announcePossible(shooterIndex: index, stand: currentStand)
+        }
         if currentTarget >= Self.targetsPerStand {
             let finished = (index: index, stand: currentStand)
             advanceToNextShooter()
@@ -1965,6 +1984,8 @@ class ShootViewModel {
     }
 
     /// Shown briefly when a shooter finishes a stand: what they scored and who is up next.
+    @ObservationIgnored private let speaker = Speaker()
+
     struct StandSummary: Equatable {
         let id = UUID()
         let shooter: String
@@ -1973,6 +1994,8 @@ class ShootViewModel {
         let total: Int
         let next: String
         var needsConfirmation = false
+        /// Set for the brief "Possible" card shown before a shooter's final pair.
+        var possible: Int? = nil
     }
     var standSummary: StandSummary?
 
@@ -2001,9 +2024,28 @@ class ShootViewModel {
                                     total: shooter.scores[stand].count, next: needsConfirmation ? "" : next,
                                     needsConfirmation: needsConfirmation)
         if needsConfirmation { standAwaitingConfirmation = stand }
+        let score = shooter.standTotal(stand)
+        let said = "\(shooter.name.capitalized), \(score) on stand \(stand + 1)."
+        if needsConfirmation {
+            speaker.say("\(said) Stand \(stand + 1) is complete. Lock it?")
+        } else {
+            speaker.say(next.hasPrefix("Next: ") ? "\(said) Next shooter, \(next.dropFirst(6))." : "\(said) \(next)")
+        }
         scoringPausedUntil = Date.now.addingTimeInterval(needsConfirmation ? 3600 : Self.summaryDuration + Self.inputSettleTime)
         AudioServicesPlaySystemSound(1025)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    /// Before the final pair: the stand score the shooter reaches if both targets are hit.
+    /// Input is not paused, so the pair can be scored straight away.
+    private func announcePossible(shooterIndex: Int, stand: Int) {
+        guard shooters.indices.contains(shooterIndex), shooters[shooterIndex].scores.indices.contains(stand) else { return }
+        let row = shooters[shooterIndex].scores[stand]
+        guard row.prefix(Self.targetsPerStand - 2).allSatisfy({ $0 >= 0 }) else { return }
+        standSummary = StandSummary(shooter: shooters[shooterIndex].name.capitalized, stand: stand + 1,
+                                    score: shooters[shooterIndex].standTotal(stand), total: row.count, next: "",
+                                    possible: shooters[shooterIndex].standTotal(stand) + 2)
+        speaker.say("Possible \(shooters[shooterIndex].standTotal(stand) + 2)")
     }
 
     func dismissStandSummary() {
@@ -2099,3 +2141,37 @@ nonisolated final class RecognitionAudioSink: @unchecked Sendable {
 
 /// Thrown when the audio engine's input has no usable format.
 nonisolated struct NoMicrophoneError: Error {}
+
+/// Speaks the app's dialogues. `isBusy` stays true shortly after speech ends so the microphone's
+/// echo of the voice is not mistaken for scoring.
+final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
+    private let synthesizer = AVSpeechSynthesizer()
+    private var speaking = false
+    private var quietAt = Date.distantPast
+
+    var isBusy: Bool { speaking || Date.now < quietAt }
+
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+    }
+
+    func say(_ text: String) {
+        synthesizer.stopSpeaking(at: .immediate)
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-GB")
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        speaking = true
+        quietAt = Date.now.addingTimeInterval(60)
+        synthesizer.speak(utterance)
+    }
+
+    private func finished() {
+        guard !synthesizer.isSpeaking else { return }
+        speaking = false
+        quietAt = Date.now.addingTimeInterval(0.8)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { finished() }
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) { finished() }
+}

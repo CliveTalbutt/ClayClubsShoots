@@ -422,7 +422,7 @@ extension ShootViewModel {
             time: String(format: "%02d:%02d", Calendar.current.component(.hour, from: shootStart), Calendar.current.component(.minute, from: shootStart)),
             stands: numberOfStands,
             targetsPerStand: targets,
-            complete: isComplete || forceComplete,
+            complete: isFinished || forceComplete,
             shooters: entries,
             ownedStands: ownedStands.map { $0.sorted().map { $0 + 1 } },
             lockedStands: (0..<numberOfStands).filter { isStandLocked($0) && isStandOwned($0) }.map { $0 + 1 }
