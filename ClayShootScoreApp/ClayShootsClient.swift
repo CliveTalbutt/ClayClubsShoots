@@ -229,6 +229,9 @@ nonisolated struct ClayShootsClient: Sendable {
 @Observable
 final class ClayShootsSettings {
     private static let urlKey = "clayShootsServerURL"
+    private static let defaultServerURL = "https://192.168.1.100:3000"
+    private static let defaultFingerprint = "85b2b4bfc97461efc0e8750a90b533ba44529be80d871755f4525f1a4afee66f"
+    private static let migratedKey = "clayShootsMigratedToMacMiniIP"
     private static let pinKey = "clayShootsServerPin"
     private static let trustKey = "clayShootsTrustSelfSigned"
     private static let emailKey = "clayShootsMemberEmail"
@@ -272,8 +275,18 @@ final class ClayShootsSettings {
         memberEmail = UserDefaults.standard.string(forKey: Self.emailKey) ?? ""
         clubName = UserDefaults.standard.string(forKey: Self.clubKey) ?? ""
         trustSelfSigned = UserDefaults.standard.bool(forKey: Self.trustKey)
-        pinnedFingerprint = UserDefaults.standard.string(forKey: Self.pinKey) ?? ""
-        serverURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""
+        let defaults = UserDefaults.standard
+        if defaults.bool(forKey: Self.migratedKey) {
+            pinnedFingerprint = defaults.string(forKey: Self.pinKey) ?? ""
+            serverURL = defaults.string(forKey: Self.urlKey) ?? Self.defaultServerURL
+        } else {
+            // One-time move from the old MacBook Pro server: new address and its certificate pin.
+            defaults.set(true, forKey: Self.migratedKey)
+            defaults.set(Self.defaultServerURL, forKey: Self.urlKey)
+            defaults.set(Self.defaultFingerprint, forKey: Self.pinKey)
+            pinnedFingerprint = Self.defaultFingerprint
+            serverURL = Self.defaultServerURL
+        }
         apiKey = Self.loadKey()
         importPendingConfig()
     }

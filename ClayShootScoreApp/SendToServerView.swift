@@ -21,7 +21,7 @@ struct SendToServerView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("https://Clives-MacBook-Pro.local:3000", text: $settings.serverURL)
+                    TextField("https://192.168.1.100:3000", text: $settings.serverURL)
                         .autocorrectionDisabled()
                         #if os(iOS)
                         .textInputAutocapitalization(.never)
