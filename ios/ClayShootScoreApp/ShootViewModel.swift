@@ -197,6 +197,7 @@ class ShootViewModel {
         observeAudioEngineChanges()
         observeAppTermination()
         restoreSnapshot()
+        wireSpeaker()
     }
 
     // MARK: - Resuming after the app was closed
@@ -217,6 +218,8 @@ class ShootViewModel {
         var kinds: [String: String]
         var started: Bool?
         var confirmed: [Int]?
+        var handicapShoot: Bool?
+        var handicaps: [String: Double]?
     }
 
     /// Changes whenever anything worth resuming changes, so the view can save on every change.
@@ -232,7 +235,8 @@ class ShootViewModel {
             shooters: shooters.map { .init(name: $0.name, scores: $0.scores) },
             currentShooterIndex: currentShooterIndex, currentStand: currentStand,
             currentTarget: currentTarget, kinds: kinds, started: isStarted,
-            confirmed: Array(confirmedStands).sorted())
+            confirmed: Array(confirmedStands).sorted(),
+            handicapShoot: isHandicapShoot, handicaps: handicaps)
         if let data = try? JSONEncoder().encode(snapshot) { UserDefaults.standard.set(data, forKey: Self.snapshotKey) }
     }
 
@@ -256,6 +260,8 @@ class ShootViewModel {
         currentTarget = min(max(snap.currentTarget, 0), Self.targetsPerStand - 1)
         isStarted = snap.started ?? hasAnyScore
         confirmedSession = snap.sessionId
+        isHandicapShoot = snap.handicapShoot ?? false
+        handicaps = snap.handicaps ?? [:]
         // Shoots saved before stands needed confirming keep their completed stands locked.
         confirmedStands = Set(snap.confirmed ?? shooters.first.map { Array($0.scores.indices) }.map { $0.filter(isStandComplete) } ?? [])
     }
@@ -273,12 +279,65 @@ class ShootViewModel {
     /// shooters and the number of stands are fixed, and the shoot is on the server.
     private(set) var isStarted = false
 
+    /// A handicap shoot ranks on net scores: each shooter's total less their handicap, which is
+    /// their average score per stand over the last year times the number of stands. Set up before
+    /// the shoot starts, fixed afterwards.
+    var isHandicapShoot = false
+
+    /// Adds a cheer to the spoken end-of-stand announcement. Chosen in the shoot setup.
+    var isEnthusiastic: Bool = UserDefaults.standard.bool(forKey: "enthusiasticFeedback") {
+        didSet { UserDefaults.standard.set(isEnthusiastic, forKey: "enthusiasticFeedback") }
+    }
+
+    private func cheer(for score: Int, outOf total: Int) -> String {
+        let ratio = total > 0 ? Double(score) / Double(total) : 0
+        let phrases: [String]
+        switch ratio {
+        case 1: phrases = ["Absolutely magnificent! A perfect round!", "Spot on! Not a feather out of place!", "Brilliant! Every single one, well done sir!"]
+        case 0.9...: phrases = ["Splendid shooting!", "Jolly good show!", "Superb! Almost perfect!"]
+        case 0.7...: phrases = ["Well shot!", "Very good indeed!", "Nicely done!"]
+        case 0.5...: phrases = ["Not bad at all, keep it up!", "A solid effort, onwards!", "Steady as she goes!"]
+        default: phrases = ["Chin up, the next one's yours!", "Never mind, plenty more to come!", "Shake it off, you'll get them next time!"]
+        }
+        return phrases.randomElement() ?? ""
+    }
+    var handicapPeriod: HandicapPeriod = .lastYear
+    private var handicapAverages: [String: Double] = [:]
+    private(set) var handicaps: [String: Double] = [:]
+
+    private static func handicapKey(_ name: String) -> String { name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+
+    func handicap(for name: String) -> Double { handicaps[Self.handicapKey(name)] ?? 0 }
+
+    /// Total less handicap. Starts below zero on a handicap shoot and climbs as targets are hit.
+    func netTotal(_ shooter: Shooter) -> Double {
+        Double(shooter.grandTotal) - (isHandicapShoot ? handicap(for: shooter.name) : 0)
+    }
+
+    func totalText(_ shooter: Shooter) -> String {
+        isHandicapShoot ? "\(Int(netTotal(shooter)))" : "\(shooter.grandTotal)"
+    }
+
+    /// Loads the last year's averages (when this is a handicap shoot) and then starts the shoot.
+    func beginShoot(client: ClayShootsClient?) async {
+        if isHandicapShoot, let client, let averages = try? await client.handicapAverages(period: handicapPeriod) {
+            handicapAverages = Dictionary(averages.map { (Self.handicapKey($0.name), $0.average) }, uniquingKeysWith: { $1 })
+        }
+        startShoot()
+    }
+
     /// Locks in the shooters and stands and begins the shoot.
     static let minimumShooters = 2
     var hasMinimumShooters: Bool { shooters.count >= Self.minimumShooters }
 
     func startShoot() {
         guard hasMinimumShooters, !isStarted else { return }
+        if isHandicapShoot {
+            handicaps = Dictionary(shooters.map { shooter in
+                let key = Self.handicapKey(shooter.name)
+                return (key, ((handicapAverages[key] ?? 0) * Double(numberOfStands) + 1e-9).rounded(.down))
+            }, uniquingKeysWith: { $1 })
+        }
         finishAddingShooters()
         isStarted = true
         saveSnapshot()
@@ -475,18 +534,40 @@ class ShootViewModel {
     /// equal totals share a place. Empty until the shoot is complete.
     var placings: [Shooter.ID: Int] {
         guard isFinished else { return [:] }
-        let ranked = shooters.sorted { $0.grandTotal > $1.grandTotal }
+        let ranked = shooters.sorted { netTotal($0) > netTotal($1) }
         var result: [Shooter.ID: Int] = [:]
-        var lastTotal: Int?
+        var lastTotal: Double?
         var lastPlace = 0
         for (index, shooter) in ranked.enumerated() {
-            if shooter.grandTotal != lastTotal {
+            if netTotal(shooter) != lastTotal {
                 lastPlace = index + 1
-                lastTotal = shooter.grandTotal
+                lastTotal = netTotal(shooter)
             }
             result[shooter.id] = lastPlace
         }
         return result
+    }
+
+    /// Reads out every shooter's score and place, best first.
+    func announceFinalResults() {
+        let placings = placings
+        guard !placings.isEmpty else { return }
+        func ordinal(_ n: Int) -> String {
+            let f = NumberFormatter()
+            f.numberStyle = .ordinal
+            f.locale = Locale(identifier: "en_GB")
+            return f.string(from: NSNumber(value: n)) ?? "\(n)"
+        }
+        let ranked = shooters.sorted {
+            (placings[$0.id] ?? 0, $0.name) < (placings[$1.id] ?? 0, $1.name)
+        }
+        var parts = ["Final results."]
+        for shooter in ranked {
+            let name = shooter.name.capitalized
+            let score = isHandicapShoot ? "\(Int(netTotal(shooter))) net" : "\(shooter.grandTotal)"
+            parts.append("\(ordinal(placings[shooter.id] ?? 0)), \(name), \(score).")
+        }
+        speaker.say(parts.joined(separator: " "), interrupt: false)
     }
 
     func placing(for shooter: Shooter) -> Int? {
@@ -640,9 +721,11 @@ class ShootViewModel {
         standSummary = nil
         scoringPausedUntil = .distantPast
         isStarted = false
+        isHandicapShoot = false
+        handicaps = [:]
+        handicapAverages = [:]
         confirmedStands = []
         editingStands = [:]
-        standAwaitingConfirmation = nil
         shootSessionId = UUID().uuidString
         shooters.removeAll()
         currentShooterIndex = nil
@@ -665,7 +748,6 @@ class ShootViewModel {
         confirmedSession = shootSessionId
         confirmedStands = Set(0..<numberOfStands)
         editingStands = [:]
-        standAwaitingConfirmation = nil
         saveSnapshot()
     }
 
@@ -688,9 +770,6 @@ class ShootViewModel {
     private(set) var confirmedStands: Set<Int> = []
     private var confirmedSession = ""
 
-    /// A completed stand waiting for the scorer to confirm it, which shows the confirmation prompt.
-    var standAwaitingConfirmation: Int?
-
     /// Stands where the scorer chose to keep editing, with when they last changed and their scores then.
     private var editingStands: [Int: (changed: Date, scores: String)] = [:]
     static let editLockDelay: TimeInterval = 15
@@ -712,49 +791,38 @@ class ShootViewModel {
             confirmedSession = shootSessionId
             confirmedStands = []
             editingStands = [:]
-            standAwaitingConfirmation = nil
-        }
+            }
         guard isStarted, !shooters.isEmpty else { return }
 
-        for (stand, state) in editingStands {
-            let key = scoresKey(stand)
-            if key != state.scores {
-                editingStands[stand] = (.now, key)
-            } else if isStandComplete(stand), Date.now.timeIntervalSince(state.changed) >= Self.editLockDelay {
-                editingStands[stand] = nil
-                confirmedStands.insert(stand)
-                saveSnapshot()
-            }
+        // A finished stand stays editable until scoring moves on: any score on a later stand locks it.
+        for stand in 0..<numberOfStands where isStandComplete(stand) && !confirmedStands.contains(stand) && hasScores(afterStand: stand) {
+            confirmedStands.insert(stand)
+            editingStands[stand] = nil
+            saveSnapshot()
         }
 
-        if let pending = standAwaitingConfirmation, !isStandComplete(pending) || confirmedStands.contains(pending) {
-            standAwaitingConfirmation = nil
-        }
-        // The combined card has nothing left to ask once its stand is edited, locked or no longer complete.
-        if standSummary?.needsConfirmation == true, standAwaitingConfirmation == nil { dismissStandSummary() }
-        guard standAwaitingConfirmation == nil else { return }
-        standAwaitingConfirmation = (0..<numberOfStands).first {
-            isStandOwned($0) && isStandComplete($0) && !confirmedStands.contains($0) && editingStands[$0] == nil
-        }
-        if let pending = standAwaitingConfirmation {
-            speaker.say("Stand \(pending + 1) is complete. Lock it?")
-            AudioServicesPlaySystemSound(1007)
-            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        // The last stand has no later stand, so once complete it locks after a spell without edits.
+        let last = numberOfStands - 1
+        if last >= 0, isStandComplete(last), !confirmedStands.contains(last) {
+            let key = scoresKey(last)
+            if let state = editingStands[last], state.scores == key {
+                if Date.now.timeIntervalSince(state.changed) >= Self.editLockDelay {
+                    editingStands[last] = nil
+                    confirmedStands.insert(last)
+                    saveSnapshot()
+                }
+            } else {
+                editingStands[last] = (.now, key)
+            }
+        } else if last >= 0 {
+            editingStands[last] = nil
         }
     }
 
-    /// The scorer's answer to "is this stand complete?".
-    func answerStandConfirmation(complete: Bool) {
-        guard let stand = standAwaitingConfirmation else { return }
-        standAwaitingConfirmation = nil
-        if standSummary?.needsConfirmation == true { dismissStandSummary() }
-        if complete {
-            confirmedStands.insert(stand)
-            editingStands[stand] = nil
-        } else {
-            editingStands[stand] = (.now, scoresKey(stand))
+    private func hasScores(afterStand stand: Int) -> Bool {
+        shooters.contains { shooter in
+            shooter.scores.indices.contains { $0 > stand && shooter.scores[$0].contains { $0 >= 0 } }
         }
-        saveSnapshot()
     }
 
     /// Wipes a shooter's scores, either on one stand or on every stand, and moves
@@ -1805,10 +1873,11 @@ class ShootViewModel {
         if currentShooterIndex == nil, !shooters.isEmpty {
             selectShooter(at: 0)
         }
-        addScore(value)
+        addScore(value, announce: true)
     }
 
-    private func addScore(_ value: Int) {
+    /// `announce` is for key and button entries; voice scoring stays silent.
+    private func addScore(_ value: Int, announce: Bool = false) {
         guard let index = currentShooterIndex,
               shooters.indices.contains(index),
               shooters[index].scores.indices.contains(currentStand),
@@ -1820,10 +1889,11 @@ class ShootViewModel {
         // Confirmation beep for every recorded score, spoken or manual.
         AudioServicesPlaySystemSound(1057)
         UINotificationFeedbackGenerator().notificationOccurred(value == 1 ? .success : .warning)
+        if announce { speaker.say(value == 1 ? "Hit" : "Miss") }
 
         currentTarget += 1
 
-        if currentTarget == Self.targetsPerStand - 2, standSummary?.needsConfirmation != true {
+        if currentTarget == Self.targetsPerStand - 2 {
             announcePossible(shooterIndex: index, stand: currentStand)
         }
         if currentTarget >= Self.targetsPerStand {
@@ -1901,6 +1971,8 @@ class ShootViewModel {
             if let start = Calendar.current.date(from: components) { shootStart = start }
         }
         numberOfStands = remote.stands
+        isHandicapShoot = remote.handicap ?? false
+        handicaps = Dictionary(remote.shooters.compactMap { e in e.handicap.map { (Self.handicapKey(e.name), $0) } }, uniquingKeysWith: { $1 })
         shooters = remote.shooters.map { makeShooter(from: $0) }
         currentShooterIndex = nil
         currentStand = firstOwnedStand
@@ -1920,6 +1992,12 @@ class ShootViewModel {
     func mergeRemote(_ remote: RemoteShoot, includeOwned: Bool = false) {
         guard remote.externalId == shootSessionId else { return }
         func key(_ name: String) -> String { name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        if remote.handicap == true {
+            if !isHandicapShoot { isHandicapShoot = true }
+            for e in remote.shooters {
+                if let h = e.handicap, handicaps[Self.handicapKey(e.name)] != h { handicaps[Self.handicapKey(e.name)] = h }
+            }
+        }
         var lastChange: (shooter: Int, stand: Int)?
         var changedStands = Set<Int>()
         for entry in remote.shooters {
@@ -1984,7 +2062,39 @@ class ShootViewModel {
     }
 
     /// Shown briefly when a shooter finishes a stand: what they scored and who is up next.
-    @ObservationIgnored private let speaker = Speaker()
+    @ObservationIgnored private let speaker: Speaker = {
+        let speaker = Speaker()
+        return speaker
+    }()
+    @ObservationIgnored private var pausedForSpeech = false
+    @ObservationIgnored private var speechResumeTask: Task<Void, Never>?
+
+    /// The microphone is switched off while the app is talking and back on shortly after.
+    private func wireSpeaker() {
+        speaker.onStart = { [weak self] in
+            guard let self else { return }
+            self.speechResumeTask?.cancel()
+            if self.isListening, !self.pausedForSpeech {
+                self.pausedForSpeech = true
+                self.stopListening()
+            }
+        }
+        speaker.onEnd = { [weak self] in
+            guard let self, self.pausedForSpeech else { return }
+            self.speechResumeTask?.cancel()
+            self.speechResumeTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(500))
+                // Keeps trying until the microphone is really back on.
+                for _ in 0..<20 {
+                    guard let self, !Task.isCancelled, self.pausedForSpeech else { return }
+                    if self.isInBackground || self.isListening { break }
+                    if !self.isStartingSession { self.resumeListening() }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+                self?.pausedForSpeech = false
+            }
+        }
+    }
 
     struct StandSummary: Equatable {
         let id = UUID()
@@ -1993,7 +2103,6 @@ class ShootViewModel {
         let score: Int
         let total: Int
         let next: String
-        var needsConfirmation = false
         /// Set for the brief "Possible" card shown before a shooter's final pair.
         var possible: Int? = nil
     }
@@ -2017,21 +2126,13 @@ class ShootViewModel {
         } else {
             next = ""
         }
-        // The last shooter closing a stand gets the lock question on this same card instead of "Next".
-        let needsConfirmation = isStandOwned(stand) && isStandComplete(stand) && !confirmedStands.contains(stand)
-            && editingStands[stand] == nil && isStarted
-        standSummary = StandSummary(shooter: shooter.name.capitalized, stand: stand + 1, score: shooter.standTotal(stand),
-                                    total: shooter.scores[stand].count, next: needsConfirmation ? "" : next,
-                                    needsConfirmation: needsConfirmation)
-        if needsConfirmation { standAwaitingConfirmation = stand }
         let score = shooter.standTotal(stand)
-        let said = "\(shooter.name.capitalized), \(score) on stand \(stand + 1)."
-        if needsConfirmation {
-            speaker.say("\(said) Stand \(stand + 1) is complete. Lock it?")
-        } else {
-            speaker.say(next.hasPrefix("Next: ") ? "\(said) Next shooter, \(next.dropFirst(6))." : "\(said) \(next)")
-        }
-        scoringPausedUntil = Date.now.addingTimeInterval(needsConfirmation ? 3600 : Self.summaryDuration + Self.inputSettleTime)
+        let cheer = isEnthusiastic ? " " + cheer(for: score, outOf: shooter.scores[stand].count) : ""
+        let said = "\(shooter.name.capitalized), \(score) on stand \(stand + 1).\(cheer)"
+        standSummary = StandSummary(shooter: shooter.name.capitalized, stand: stand + 1, score: score,
+                                    total: shooter.scores[stand].count, next: next)
+        speaker.say(next.hasPrefix("Next: ") ? "\(said) Next shooter, \(next.dropFirst(6))." : "\(said) \(next)", interrupt: false)
+        scoringPausedUntil = Date.now.addingTimeInterval(Self.summaryDuration + Self.inputSettleTime)
         AudioServicesPlaySystemSound(1025)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
@@ -2045,7 +2146,7 @@ class ShootViewModel {
         standSummary = StandSummary(shooter: shooters[shooterIndex].name.capitalized, stand: stand + 1,
                                     score: shooters[shooterIndex].standTotal(stand), total: row.count, next: "",
                                     possible: shooters[shooterIndex].standTotal(stand) + 2)
-        speaker.say("Possible \(shooters[shooterIndex].standTotal(stand) + 2)")
+        speaker.say("Possible \(shooters[shooterIndex].standTotal(stand) + 2)", interrupt: false)
     }
 
     func dismissStandSummary() {
@@ -2149,20 +2250,38 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
     private var speaking = false
     private var quietAt = Date.distantPast
 
+    /// The best British male voice installed: Daniel (or Oliver / Arthur), preferring premium and
+    /// enhanced downloads, falling back to any en-GB voice.
+    private static let gentVoice: AVSpeechSynthesisVoice? = {
+        let british = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == "en-GB" }
+        let preferred = ["daniel", "oliver", "arthur"]
+        func rank(_ v: AVSpeechSynthesisVoice) -> Int {
+            let name = v.name.lowercased()
+            let nameScore = preferred.firstIndex { name.contains($0) }.map { 10 - $0 } ?? 0
+            return nameScore * 10 + v.quality.rawValue
+        }
+        return british.max { rank($0) < rank($1) } ?? AVSpeechSynthesisVoice(language: "en-GB")
+    }()
+
     var isBusy: Bool { speaking || Date.now < quietAt }
+    var onStart: (() -> Void)?
+    var onEnd: (() -> Void)?
 
     override init() {
         super.init()
         synthesizer.delegate = self
     }
 
-    func say(_ text: String) {
-        synthesizer.stopSpeaking(at: .immediate)
+    /// Hits and misses cut across whatever is being said; announcements queue behind them.
+    func say(_ text: String, interrupt: Bool = true) {
+        if interrupt { synthesizer.stopSpeaking(at: .immediate) }
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-GB")
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        utterance.voice = Self.gentVoice
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
+        utterance.pitchMultiplier = 0.88
         speaking = true
         quietAt = Date.now.addingTimeInterval(60)
+        onStart?()
         synthesizer.speak(utterance)
     }
 
@@ -2170,6 +2289,7 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
         guard !synthesizer.isSpeaking else { return }
         speaking = false
         quietAt = Date.now.addingTimeInterval(0.8)
+        onEnd?()
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { finished() }

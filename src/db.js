@@ -167,10 +167,17 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'is_super
 if (!db.prepare('SELECT 1 FROM users WHERE is_super = 1').get()) {
   db.prepare('UPDATE users SET is_super = 1 WHERE lower(email) = ?').run((process.env.SUPER_ADMIN_EMAIL || 'clive.talbutt@gmail.com').toLowerCase());
 }
-for (const [col, def] of [['email_verified_at', 'TEXT'], ['verify_token_hash', 'TEXT'], ['verify_sent_at', 'TEXT']]) {
+for (const [col, def] of [['signed_guest_book', 'INTEGER NOT NULL DEFAULT 0'], ['email_verified_at', 'TEXT'], ['verify_token_hash', 'TEXT'], ['verify_sent_at', 'TEXT']]) {
   if (!db.prepare("SELECT 1 FROM pragma_table_info('roster') WHERE name = ?").get(col)) db.exec(`ALTER TABLE roster ADD COLUMN ${col} ${def}`);
 }
 // 1 = finished (every older shoot is); live apps upload 0 until the shoot ends.
+if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'is_handicap'").get()) db.exec('ALTER TABLE shoots ADD COLUMN is_handicap INTEGER NOT NULL DEFAULT 0');
+db.exec(`CREATE TABLE IF NOT EXISTS shoot_handicaps (
+  shoot_id INTEGER NOT NULL REFERENCES shoots(id) ON DELETE CASCADE,
+  shooter TEXT NOT NULL,
+  handicap REAL NOT NULL,
+  PRIMARY KEY (shoot_id, shooter)
+)`);
 if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'locked_stands'").get()) db.exec("ALTER TABLE shoots ADD COLUMN locked_stands TEXT NOT NULL DEFAULT '[]'");
 if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'complete'").get()) db.exec('ALTER TABLE shoots ADD COLUMN complete INTEGER NOT NULL DEFAULT 1');
 if (!db.prepare("SELECT 1 FROM pragma_table_info('results') WHERE name = 'pattern'").get()) db.exec('ALTER TABLE results ADD COLUMN pattern TEXT');

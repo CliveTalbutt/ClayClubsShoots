@@ -83,7 +83,7 @@
                   <% } %>
                 </td>
               <% }) %>
-              <td class="num" data-sort-value="<%= shooter.total %>"><strong><%= shooter.total %></strong></td>
+              <td class="num" data-sort-value="<%= shooter.net %>"><strong><%= shoot.is_handicap ? shooter.net : shooter.total %></strong><% if (shoot.is_handicap) { %><br><small class="muted" title="Total less handicap"><%= shooter.total %> − <%= shooter.handicap %></small><% } %></td>
               <% const shot = shooter.scores.filter((v) => v != null).length; const avg = shot ? (100 * shooter.total) / (shot * shoot.targets_per_stand) : null; %>
               <td class="num" data-sort-value="<%= avg == null ? '' : avg.toFixed(2) %>"><%= avg == null ? '–' : avg.toFixed(1) + '%' %></td>
               <td class="num place" data-sort-value="<%= shooter.place %>" data-export="<%= shooter.place %>">

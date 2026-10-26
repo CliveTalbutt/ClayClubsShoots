@@ -14,7 +14,7 @@
     <% shooters.forEach(s => { %>
       <tr><td><span<%- shooterAttrs(s.name) %>><%= s.name %></span></td>
         <% s.scores.forEach(v => { %><td class="num"><%= v ?? '–' %></td><% }) %>
-        <td class="num"><strong><%= s.total %></strong></td></tr>
+        <td class="num"><strong><%= shoot.is_handicap ? s.net : s.total %></strong><% if (shoot.is_handicap) { %> <small title="Total less handicap">(<%= s.total %> − <%= s.handicap %>)</small><% } %></td></tr>
     <% }) %>
     </tbody>
   </table>

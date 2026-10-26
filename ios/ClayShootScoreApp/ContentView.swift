@@ -52,28 +52,12 @@ struct ContentView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                ScoreTableView(vm: vm)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.background.secondary, in: .rect(cornerRadius: 16))
-                    .focusable()
-                    .focusEffectDisabled()
-                    .focused($isScoreTableFocused)
-                    // Y scores a hit and X a miss on the current target. Both
-                    // upper and lower case are accepted.
-                    .onKeyPress(characters: CharacterSet(charactersIn: "yYxX"), phases: .down) { press in
-                        switch press.characters.lowercased() {
-                        case "y":
-                            vm.recordHit()
-                        case "x":
-                            vm.recordMiss()
-                        default:
-                            return .ignored
-                        }
-                        return .handled
-                    }
-                    // Tapping anywhere on the table brings keyboard focus back to
-                    // it after typing in the shoot name or a shooter's name.
-                    .simultaneousGesture(TapGesture().onEnded { isScoreTableFocused = true })
+                if vm.shooters.isEmpty, !vm.isAddingShooter {
+                    homeView
+                        .transition(.opacity)
+                } else {
+                    scoreTable
+                }
 
                 if vm.isFinished {
                     podiumView
@@ -100,17 +84,15 @@ struct ContentView: View {
                 if let summary = vm.standSummary {
                     // A timed card goes away on a tap anywhere; the tap is swallowed here so it
                     // never reaches the Hit/Miss buttons or the table underneath.
-                    if !summary.needsConfirmation {
-                        Color.black.opacity(0.001)
-                            .ignoresSafeArea()
-                            .contentShape(Rectangle())
-                            .onTapGesture { if summary.possible != nil { vm.standSummary = nil } else { vm.dismissStandSummary() } }
-                    }
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture { if summary.possible != nil { vm.standSummary = nil } else { vm.dismissStandSummary() } }
                     standSummaryCard(summary)
                         .transition(.scale(scale: 0.9).combined(with: .opacity))
                         .task(id: summary.id) {
                             try? await Task.sleep(for: .seconds(summary.possible != nil ? 2 : ShootViewModel.summaryDuration))
-                            guard !Task.isCancelled, !summary.needsConfirmation, vm.standSummary?.id == summary.id else { return }
+                            guard !Task.isCancelled, vm.standSummary?.id == summary.id else { return }
                             if summary.possible != nil { vm.standSummary = nil } else { vm.dismissStandSummary() }
                         }
                 }
@@ -152,6 +134,9 @@ struct ContentView: View {
                     break
                 }
             }
+            .onChange(of: vm.isFinished) { _, finished in
+                if finished { vm.announceFinalResults() }
+            }
             .onChange(of: vm.snapshotSignature) { _, _ in
                 vm.saveSnapshot()
                 vm.evaluateStandCompletion()
@@ -161,13 +146,6 @@ struct ContentView: View {
                     try? await Task.sleep(for: .seconds(1))
                     vm.evaluateStandCompletion()
                 }
-            }
-            .alert("Stand \((vm.standAwaitingConfirmation ?? 0) + 1) complete?",
-                   isPresented: Binding(get: { vm.standAwaitingConfirmation != nil && vm.standSummary?.needsConfirmation != true }, set: { _ in })) {
-                Button("Yes, lock it") { vm.answerStandConfirmation(complete: true) }
-                Button("No, keep editing", role: .cancel) { vm.answerStandConfirmation(complete: false) }
-            } message: {
-                Text("Every target is scored. Locking stops any further changes. If you keep editing, the stand locks after \(Int(ShootViewModel.editLockDelay)) seconds without changes.")
             }
             #if os(macOS)
             .frame(minWidth: 900, minHeight: 500)
@@ -337,6 +315,66 @@ struct ContentView: View {
 
     /// Shown once every shooter has finished: makes sure the final results are queued,
     /// clears the sheet and opens "Who is shooting?" for the next shoot.
+    private var scoreTable: some View {
+        ScoreTableView(vm: vm)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.background.secondary, in: .rect(cornerRadius: 16))
+                    .focusable()
+                    .focusEffectDisabled()
+                    .focused($isScoreTableFocused)
+                    // Y scores a hit and X a miss on the current target. Both
+                    // upper and lower case are accepted.
+                    .onKeyPress(characters: CharacterSet(charactersIn: "yYxX"), phases: .down) { press in
+                        switch press.characters.lowercased() {
+                        case "y":
+                            vm.recordHit()
+                        case "x":
+                            vm.recordMiss()
+                        default:
+                            return .ignored
+                        }
+                        return .handled
+                    }
+                    // Tapping anywhere on the table brings keyboard focus back to
+                    // it after typing in the shoot name or a shooter's name.
+                    .simultaneousGesture(TapGesture().onEnded { isScoreTableFocused = true })
+    }
+
+    /// Shown when there is no shoot on the scoresheet, for example after a shoot is finished.
+    private var homeView: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image(systemName: "scope")
+                .font(.system(size: 64))
+                .foregroundStyle(.green)
+            Text(vm.venue.isEmpty ? "Clay Shoots" : vm.venue)
+                .font(.title.bold())
+                .multilineTextAlignment(.center)
+            Text("Ready for the next shoot")
+                .foregroundStyle(.secondary)
+            Button {
+                isShowingRoster = true
+            } label: {
+                Label("New Shoot", systemImage: "plus.circle.fill")
+                    .font(.headline)
+                    .frame(maxWidth: 360)
+                    .frame(height: 60)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+            Button {
+                Task { await openCurrentShootOrRoster() }
+            } label: {
+                Label("Join the current shoot", systemImage: "person.2.wave.2")
+                    .frame(maxWidth: 360)
+            }
+            .buttonStyle(.bordered)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.background.secondary, in: .rect(cornerRadius: 16))
+    }
+
     private var newShootButton: some View {
         Button {
             queueFinalResults()
@@ -412,7 +450,7 @@ struct ContentView: View {
         }
         if !vm.isStarted, !vm.shooters.isEmpty {
             Button {
-                vm.startShoot()
+                Task { await vm.beginShoot(client: serverSettings.client) }
             } label: {
                 Label("Start Shoot", systemImage: "play.fill")
             }
@@ -488,7 +526,7 @@ struct ContentView: View {
             if scenePhase == .active, let client = serverSettings.client {
                 await refreshCurrentShoot(client)
             }
-            try? await Task.sleep(for: .milliseconds(1000))
+            try? await Task.sleep(for: .seconds(2))
         }
     }
 
@@ -617,28 +655,13 @@ struct ContentView: View {
                     .font(.title3.weight(.semibold))
             }
             }
-            if summary.needsConfirmation {
-                Text("Stand \(summary.stand) is complete. Lock it?")
-                    .font(.title3.weight(.semibold))
-                HStack(spacing: 12) {
-                    Button("No, keep editing") { vm.answerStandConfirmation(complete: false) }
-                        .buttonStyle(.bordered)
-                    Button("Yes, lock it") { vm.answerStandConfirmation(complete: true) }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.green)
-                }
-                .padding(.top, 4)
-                Text("If you keep editing, it locks after \(Int(ShootViewModel.editLockDelay)) seconds without changes.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 18)
         .background(.regularMaterial, in: .rect(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.green, lineWidth: 1))
         .shadow(radius: 12)
-        .onTapGesture { if summary.possible != nil { vm.standSummary = nil } else if !summary.needsConfirmation { vm.dismissStandSummary() } }
+        .onTapGesture { if summary.possible != nil { vm.standSummary = nil } else { vm.dismissStandSummary() } }
     }
 
     // MARK: - Add shooters
@@ -712,7 +735,7 @@ struct ContentView: View {
 
     private var finishAddingButton: some View {
         Button("Start Shoot") {
-            if vm.shooters.isEmpty { vm.finishAddingShooters() } else { vm.startShoot() }
+            if vm.shooters.isEmpty { vm.finishAddingShooters() } else { Task { await vm.beginShoot(client: serverSettings.client) } }
         }
         .buttonStyle(.borderedProminent)
         .tint(.green)
@@ -746,7 +769,7 @@ struct ContentView: View {
                         Text(entry.shooter.name.capitalized)
                             .lineLimit(isCompact ? 1 : nil)
                             .minimumScaleFactor(isCompact ? 0.8 : 1)
-                        Text("\(entry.shooter.grandTotal)")
+                        Text(vm.totalText(entry.shooter))
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }

@@ -8,6 +8,7 @@
   var remove = form.querySelector('[data-form-remove]'), delForm = document.getElementById('roster-delete');
   var addAction = form.getAttribute('action');
   var selected = null;
+  var guestOnly = form.querySelector('[data-guest-only]');
 
   var proper = function (v) {
     return v.toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, function (m, p, c) { return p + c.toUpperCase(); });
@@ -19,7 +20,10 @@
   el.name.addEventListener('blur', function () { el.name.value = proper(el.name.value.trim().replace(/\s+/g, ' ')); });
 
   function ready() {
-    submit.hidden = !(el.name.value.trim() && el.email.value.trim() && el.email.checkValidity());
+    var guest = el.kind.value === 'guest';
+    guestOnly.hidden = !guest;
+    el.email.required = !guest;
+    submit.hidden = !(el.name.value.trim() && (guest || el.email.value.trim()) && el.email.checkValidity());
   }
   form.addEventListener('input', ready);
 
@@ -37,7 +41,7 @@
       delForm.dataset.confirm = 'Remove ' + d.name + ' from the membership? Past results are kept. This cannot be undone.';
       title.textContent = 'Edit member';
       submit.textContent = 'Save';
-      el.name.value = d.name; el.email.value = d.email; el.kind.value = d.kind; status.value = d.status;
+      el.name.value = d.name; el.email.value = d.email; el.kind.value = d.kind; status.value = d.status; el.signedGuestBook.checked = !!d.signed;
       guid.textContent = 'ID ' + d.guid;
       form.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       el.name.focus();

@@ -16,16 +16,18 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
   const allowance = require('./allowance')(db);
   const key = (n) => String(n).trim().toLowerCase();
 
-  function validate(body) {
+  function validate(body, kind = 'member') {
     const name = cleanName(body && body.name);
     const email = String((body && body.email) || '').trim().toLowerCase();
     const errors = [];
     if (!NAME_RE.test(name)) errors.push('name must be 1-60 letters');
-    if (!mailer.validEmail(email)) errors.push('a valid email address is required');
-    return { name, email, errors };
+    // Only members need an address; a guest may leave it blank.
+    if (kind === 'member' ? !mailer.validEmail(email) : (email && !mailer.validEmail(email))) errors.push('a valid email address is required');
+    const signed = kind !== 'member' && [true, 'on', '1', 1, 'true'].includes(body && body.signedGuestBook) ? 1 : 0;
+    return { name, email, errors, signed };
   }
 
-  const present = (r) => ({ id: r.id, guid: r.guid, name: r.name, email: r.email, kind: r.kind, isAdmin: r.is_admin === 1, verified: !!r.email_verified_at });
+  const present = (r) => ({ id: r.id, guid: r.guid, name: r.name, email: r.email, kind: r.kind, isAdmin: r.is_admin === 1, verified: !!r.email_verified_at, signedGuestBook: r.signed_guest_book === 1 });
 
   // What the app shows: guests and current members only.
   function listCurrent(userId) {
@@ -38,7 +40,7 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
 
   // Adds a shooter to this club's roster only; the same person may exist in other clubs.
   function add(userId, body, kind = 'guest', admin = false) {
-    const { name, email, errors } = validate(body);
+    const { name, email, errors, signed } = validate(body, kind);
     if (errors.length) return { status: 400, body: { error: 'validation', details: errors } };
     const existing = db.prepare('SELECT * FROM roster WHERE user_id = ? AND name_key = ? AND email = ?').get(userId, key(name), email);
     if (existing) {
@@ -49,7 +51,7 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
     }
     const over = allowance.check(userId, kind);
     if (over) return { status: 402, body: { error: 'shooter_limit', details: [over] } };
-    const r = db.prepare('INSERT INTO roster (user_id, name, name_key, email, kind, is_admin, guid) VALUES (?,?,?,?,?,?,?)').run(userId, name, key(name), email, kind, kind === 'member' && admin ? 1 : 0, crypto.randomUUID());
+    const r = db.prepare('INSERT INTO roster (user_id, name, name_key, email, kind, is_admin, guid, signed_guest_book) VALUES (?,?,?,?,?,?,?,?)').run(userId, name, key(name), email, kind, kind === 'member' && admin ? 1 : 0, crypto.randomUUID(), signed);
     mailer.saveEmails(userId, [{ name, email }]);
     return { status: 201, body: { shooter: present(db.prepare('SELECT * FROM roster WHERE id = ?').get(r.lastInsertRowid)) } };
   }
@@ -58,6 +60,7 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
   async function sendVerification(userId, id) {
     const r = db.prepare('SELECT * FROM roster WHERE id = ? AND user_id = ?').get(id, userId);
     if (!r) return { ok: false, message: 'Unknown shooter.' };
+    if (!r.email) return { ok: false, message: 'No email address on file.' };
     if (r.email_verified_at) return { ok: false, message: 'Already verified.' };
     if (r.verify_sent_at && Date.now() - Date.parse(r.verify_sent_at + 'Z') < RESEND_MINUTES * 60e3) {
       return { ok: false, message: `A verification email was sent less than ${RESEND_MINUTES} minutes ago.` };
@@ -97,7 +100,7 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
     const admin = req.body.kind === 'admin';
     const kind = admin || req.body.kind === 'member' ? 'member' : 'guest';
     const r = add(req.session.userId, req.body, kind, admin);
-    if (r.status === 201) sendVerification(req.session.userId, r.body.shooter.id).catch(() => {});
+    if (r.status === 201 && r.body.shooter.email) sendVerification(req.session.userId, r.body.shooter.id).catch(() => {});
     if (r.status === 201) return back(res, `Added ${r.body.shooter.name} as ${admin ? 'an admin member' : 'a ' + kind}.`);
     if (r.status === 200) return back(res, null, 'That shooter is already in the membership.');
     back(res, null, (r.body.details || ['Could not add shooter.']).join('; '));
@@ -109,10 +112,10 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
     const uid = req.session.userId;
     const r = mine(req);
     if (!r) return back(res, null, 'Unknown shooter.');
-    const { name, email, errors } = validate(req.body);
-    if (errors.length) return back(res, null, errors.join('; '));
     const admin = req.body.kind === 'admin';
     const kind = admin || req.body.kind === 'member' ? 'member' : 'guest';
+    const { name, email, errors, signed } = validate(req.body, kind);
+    if (errors.length) return back(res, null, errors.join('; '));
     const status = req.body.status === 'expired' ? 'expired' : 'current';
     const nk = key(name);
     if (db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND id != ? AND (name_key = ? AND (email = ? OR ? != ?))').get(uid, r.id, nk, email, nk, r.name_key)) {
@@ -131,18 +134,18 @@ module.exports = function createRoster({ db, needAuth, mailer, baseUrl, wrap }) 
       } else {
         db.prepare('UPDATE results SET shooter = ? WHERE lower(shooter) = ? AND shoot_id IN (SELECT id FROM shoots WHERE user_id = ?)').run(name, nk, uid);
       }
-      db.prepare(`UPDATE roster SET name = ?, name_key = ?, email = ?, kind = ?, is_admin = ?, status = ?,
+      db.prepare(`UPDATE roster SET name = ?, name_key = ?, email = ?, kind = ?, is_admin = ?, status = ?, signed_guest_book = ?,
         email_verified_at = CASE WHEN ? THEN NULL ELSE email_verified_at END,
         verify_token_hash = CASE WHEN ? THEN NULL ELSE verify_token_hash END,
         verify_sent_at = CASE WHEN ? THEN NULL ELSE verify_sent_at END WHERE id = ?`)
-        .run(name, nk, email, kind, kind === 'member' && admin ? 1 : 0, status, +emailChanged, +emailChanged, +emailChanged, r.id);
+        .run(name, nk, email, kind, kind === 'member' && admin ? 1 : 0, status, signed, +emailChanged, +emailChanged, +emailChanged, r.id);
       mailer.saveEmails(uid, [{ name, email }]);
       db.exec('COMMIT');
     } catch (e) {
       try { db.exec('ROLLBACK'); } catch {}
       return back(res, null, 'Could not save: that name clashes with existing shoot results.');
     }
-    if (emailChanged) sendVerification(uid, r.id).catch(() => {});
+    if (emailChanged && email) sendVerification(uid, r.id).catch(() => {});
     back(res, `Saved changes to ${name}.`);
   });
 

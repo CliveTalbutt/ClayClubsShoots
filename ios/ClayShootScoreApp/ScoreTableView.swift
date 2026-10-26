@@ -325,7 +325,7 @@ struct ScoreTableView: View {
             .accessibilityLabel("Guest")
     }
     Spacer(minLength: 2)
-    Text("\(shooter.grandTotal)")
+    Text(vm.totalText(shooter))
         .font(.subheadline.monospacedDigit())
         .bold()
 }
@@ -387,13 +387,18 @@ struct ScoreTableView: View {
     @ViewBuilder
     private func placeLabel(for shooter: Shooter) -> some View {
         if let place = vm.placing(for: shooter) {
-            HStack(spacing: 4) {
-                if let medal = Placing.medal(place) {
-                    Text(medal)
-                }
+            // Fixed slots keep the medals and ordinals lined up, including places with no medal.
+            HStack(spacing: 2) {
+                Text(Placing.medal(place) ?? "")
+                    .frame(width: 26)
                 Text(Placing.ordinal(place))
                     .bold()
+                    .monospacedDigit()
+                    .frame(width: 38, alignment: .leading)
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(width: placeWidth)
         } else {
             Text("")
         }

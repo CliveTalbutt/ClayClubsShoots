@@ -16,6 +16,8 @@ nonisolated struct ShootUpload: Encodable, Sendable {
         let scores: [Int]
         /// One string per stand: "1" hit, "0" miss, "-" not shot.
         let patterns: [String]
+        /// Handicap shoots only: the amount taken off this shooter's total.
+        var handicap: Double? = nil
     }
 
     let externalId: String
@@ -32,6 +34,7 @@ nonisolated struct ShootUpload: Encodable, Sendable {
     /// stands so other devices can score the rest of the same shoot; nil replaces the whole shoot.
     var ownedStands: [Int]? = nil
     var lockedStands: [Int]? = nil
+    var handicap: Bool? = nil
 }
 
 /// The club's shoot that is still being scored, as other devices have uploaded it.
@@ -40,6 +43,7 @@ nonisolated struct RemoteShoot: Decodable, Sendable {
         let name: String
         /// One string per stand: "1" hit, "0" miss, "-" not shot.
         let patterns: [String]
+        let handicap: Double?
     }
     let externalId: String
     let name: String
@@ -49,6 +53,27 @@ nonisolated struct RemoteShoot: Decodable, Sendable {
     let stands: Int
     let targetsPerStand: Int
     let shooters: [Entry]
+    let handicap: Bool?
+}
+
+enum HandicapPeriod: String, CaseIterable, Identifiable, Sendable {
+    case allTime = "all", lastYear = "year", last3Months = "3months", last1Month = "1month", last6Shoots = "last6shoots", last3Shoots = "last3shoots"
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .allTime: "All time"
+        case .lastYear: "Last year"
+        case .last3Months: "Last 3 months"
+        case .last1Month: "Last 1 month"
+        case .last6Shoots: "Last 6 shoots"
+        case .last3Shoots: "Last 3 shoots"
+        }
+    }
+}
+
+nonisolated struct HandicapReply: Decodable, Sendable {
+    nonisolated struct Average: Decodable, Sendable { let name: String; let average: Double }
+    let averages: [Average]
 }
 
 nonisolated struct CurrentShootReply: Decodable, Sendable {
@@ -72,6 +97,7 @@ nonisolated struct RosterShooter: Codable, Identifiable, Hashable, Sendable {
     let kind: String
     var isAdmin: Bool? = false
     var verified: Bool? = false
+    var signedGuestBook: Bool? = false
     var isGuest: Bool { kind != "member" }
 }
 
@@ -179,14 +205,14 @@ nonisolated struct ClayShootsClient: Sendable {
     }
 
     /// Adds a new shooter to the club's roster as a member or guest and returns the saved entry.
-    func addRosterShooter(name: String, email: String, isMember: Bool, isAdmin: Bool) async throws -> RosterShooter {
+    func addRosterShooter(name: String, email: String, isMember: Bool, isAdmin: Bool, signedGuestBook: Bool = false) async throws -> RosterShooter {
         var request = URLRequest(url: baseURL.appending(path: "api/v1/shooters"))
         request.httpMethod = "POST"
         request.timeoutInterval = 15
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct NewShooter: Encodable { let name: String; let email: String; let kind: String; let isAdmin: Bool }
-        request.httpBody = try JSONEncoder().encode(NewShooter(name: name, email: email, kind: isMember ? "member" : "guest", isAdmin: isMember && isAdmin))
+        struct NewShooter: Encodable { let name: String; let email: String; let kind: String; let isAdmin: Bool; let signedGuestBook: Bool }
+        request.httpBody = try JSONEncoder().encode(NewShooter(name: name, email: email, kind: isMember ? "member" : "guest", isAdmin: isMember && isAdmin, signedGuestBook: !isMember && signedGuestBook))
         let (data, response) = try await perform(request)
         guard response.statusCode == 200 || response.statusCode == 201 else {
             if response.statusCode == 409 { throw ClayShootsError.validation(["that shooter's membership has expired"]) }
@@ -208,6 +234,16 @@ nonisolated struct ClayShootsClient: Sendable {
         let (data, response) = try await perform(request)
         try Self.check(response, data: data, expected: 200)
         return try JSONDecoder().decode(CurrentShootReply.self, from: data)
+    }
+
+    /// Each shooter's average score per stand over the last year, for handicap shoots.
+    func handicapAverages(period: HandicapPeriod) async throws -> [HandicapReply.Average] {
+        var request = URLRequest(url: baseURL.appending(path: "api/v1/handicaps").appending(queryItems: [URLQueryItem(name: "period", value: period.rawValue)]))
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await perform(request)
+        try Self.check(response, data: data, expected: 200)
+        return try JSONDecoder().decode(HandicapReply.self, from: data).averages
     }
 
     func send(_ upload: ShootUpload) async throws -> ShootUploadReceipt {
@@ -409,7 +445,8 @@ extension ShootViewModel {
                     return v > 0 ? "1" : (v == 0 ? "0" : "-")
                 })
             }
-            return .init(name: name, email: email(for: shooter.name), scores: scores, patterns: patterns)
+            return .init(name: name, email: email(for: shooter.name), scores: scores, patterns: patterns,
+                         handicap: isHandicapShoot ? handicap(for: shooter.name) : nil)
         }
         let c = Calendar.current.dateComponents([.year, .month, .day], from: shootStart)
         let date = String(format: "%04d-%02d-%02d", c.year ?? 1970, c.month ?? 1, c.day ?? 1)
@@ -425,7 +462,8 @@ extension ShootViewModel {
             complete: isFinished || forceComplete,
             shooters: entries,
             ownedStands: ownedStands.map { $0.sorted().map { $0 + 1 } },
-            lockedStands: (0..<numberOfStands).filter { isStandLocked($0) && isStandOwned($0) }.map { $0 + 1 }
+            lockedStands: (0..<numberOfStands).filter { isStandLocked($0) && isStandOwned($0) }.map { $0 + 1 },
+            handicap: isHandicapShoot ? true : nil
         )
     }
 

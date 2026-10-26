@@ -17,6 +17,7 @@ struct RosterView: View {
     @State private var isAdding = false
     @State private var newIsMember = false
     @State private var newIsAdmin = false
+    @State private var newSignedGuestBook = false
 
     private static let cacheKey = "rosterCache"
 
@@ -32,7 +33,7 @@ struct RosterView: View {
     }
 
     private var canAdd: Bool {
-        !ClayShootsNameCleaner.clean(newName).isEmpty && Self.isValidEmail(newEmail) && !isAdding
+        !ClayShootsNameCleaner.clean(newName).isEmpty && (newEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? !newIsMember : Self.isValidEmail(newEmail)) && !isAdding
     }
 
     var body: some View {
@@ -56,6 +57,18 @@ struct RosterView: View {
                         ForEach(ShootViewModel.standOptions, id: \.self) { Text("\($0)").tag($0) }
                     }
                     .disabled(vm.isStarted)
+                    Toggle("Enthusiastic feedback", isOn: $vm.isEnthusiastic)
+                    Toggle("Handicap shoot", isOn: $vm.isHandicapShoot)
+                        .disabled(vm.isStarted)
+                    if vm.isHandicapShoot {
+                        Picker("Average taken over", selection: $vm.handicapPeriod) {
+                            ForEach(HandicapPeriod.allCases) { Text($0.title).tag($0) }
+                        }
+                        .disabled(vm.isStarted)
+                        Text("Each shooter's total starts at minus their average score per stand over the chosen period, times the number of stands.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("Registered shooters") {
@@ -99,7 +112,7 @@ struct RosterView: View {
                     TextField("Name", text: $newName)
                         .textInputAutocapitalization(.words)
                         .autocorrectionDisabled()
-                    TextField("Email address", text: $newEmail)
+                    TextField(newIsMember ? "Email address" : "Email address (optional)", text: $newEmail)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.emailAddress)
                         .autocorrectionDisabled()
@@ -110,6 +123,8 @@ struct RosterView: View {
                     .pickerStyle(.segmented)
                     if newIsMember {
                         Toggle("Admin", isOn: $newIsAdmin)
+                    } else {
+                        Toggle("Has signed the guest book", isOn: $newSignedGuestBook)
                     }
                     if !newEmail.isEmpty, !Self.isValidEmail(newEmail) {
                         Text("Enter a valid email address.").font(.footnote).foregroundStyle(.red)
@@ -129,8 +144,8 @@ struct RosterView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start Shoot") {
                         vm.applyRoster(roster.filter { ticked.contains($0.id) })
-                        vm.startShoot()
                         dismiss()
+                        Task { await vm.beginShoot(client: settings.client) }
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.green)
@@ -181,7 +196,7 @@ struct RosterView: View {
             let saved = try await client.addRosterShooter(
                 name: ClayShootsNameCleaner.clean(newName),
                 email: newEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-                isMember: newIsMember, isAdmin: newIsAdmin)
+                isMember: newIsMember, isAdmin: newIsAdmin, signedGuestBook: newSignedGuestBook)
             if !roster.contains(where: { $0.id == saved.id }) {
                 roster.append(saved)
                 roster.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -190,6 +205,7 @@ struct RosterView: View {
             newName = ""
             newEmail = ""
             newIsAdmin = false
+            newSignedGuestBook = false
             message = nil
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription

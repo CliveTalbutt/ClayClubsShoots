@@ -175,6 +175,13 @@ function notifyOnce(userId, shootId, flags) {
   if (flags.email) mailer.sendShoot(userId, shootId);
   if (flags.social) social.postShoot(userId, shootId);
 }
+// Stores a handicap shoot's flag and each shooter's handicap (set when the shoot starts, never recomputed).
+function saveHandicaps(shootId, b) {
+  if (b.handicap !== true) return;
+  db.prepare('UPDATE shoots SET is_handicap = 1 WHERE id = ?').run(shootId);
+  const up = db.prepare('INSERT OR REPLACE INTO shoot_handicaps (shoot_id, shooter, handicap) VALUES (?,?,?)');
+  for (const s of b.shooters) if (typeof s.handicap === 'number') up.run(shootId, s.name.trim(), Math.floor(s.handicap + 1e-9));
+}
 app.post('/api/v1/shoots', uploadLimiter, express.json({ limit: '1mb' }), (req, res) => {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
   const user = m && userByKey(m[1]);
@@ -196,6 +203,8 @@ app.post('/api/v1/shoots', uploadLimiter, express.json({ limit: '1mb' }), (req, 
   if (b.complete != null && typeof b.complete !== 'boolean') errors.push('complete must be true or false');
   if (b.externalId != null && !str(b.externalId, 100)) errors.push('externalId invalid');
   if (b.ownedStands != null && !(Array.isArray(b.ownedStands) && b.ownedStands.every((n) => Number.isInteger(n) && n >= 1 && n <= (b.stands || 0)))) errors.push('ownedStands must list stand numbers within the shoot');
+  if (b.handicap != null && typeof b.handicap !== 'boolean') errors.push('handicap must be true or false');
+  if (Array.isArray(b.shooters) && b.shooters.some((s) => s && s.handicap != null && !(typeof s.handicap === 'number' && s.handicap >= 0 && s.handicap <= 2500))) errors.push('shooter handicap must be a number 0-2500');
   if (b.lockedStands != null && !(Array.isArray(b.lockedStands) && b.lockedStands.every((n) => Number.isInteger(n) && n >= 1 && n <= (b.stands || 0)))) errors.push('lockedStands must list stand numbers within the shoot');
   if (!Array.isArray(b.shooters) || b.shooters.length < 1 || b.shooters.length > 500) errors.push('shooters must be an array of 1-500');
   else {
@@ -238,6 +247,7 @@ app.post('/api/v1/shoots', uploadLimiter, express.json({ limit: '1mb' }), (req, 
           db.prepare('DELETE FROM results WHERE shoot_id = ?').run(existing.id);
           for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(existing.id, s.name.trim(), i + 1, sc, s.patterns?.[i] ?? null));
         }
+        saveHandicaps(existing.id, b);
         if (Array.isArray(b.lockedStands)) {
           // A device only decides the locks of the stands it owns; a locked stand stays locked.
           const old = JSON.parse(db.prepare('SELECT locked_stands FROM shoots WHERE id = ?').get(existing.id).locked_stands || '[]');
@@ -256,6 +266,7 @@ app.post('/api/v1/shoots', uploadLimiter, express.json({ limit: '1mb' }), (req, 
       const r = db.prepare(
         "INSERT INTO shoots (user_id, external_id, name, venue, shoot_date, shoot_time, stands, targets_per_stand, complete, updated_at) VALUES (?,?,?,?,?,?,?,?,?, datetime('now'))"
       ).run(user.id, b.externalId ?? null, b.name.trim(), b.venue?.trim() ?? null, b.date, b.time ?? null, b.stands, tps, b.complete === false ? 0 : 1);
+      saveHandicaps(r.lastInsertRowid, b);
       if (Array.isArray(b.lockedStands)) db.prepare('UPDATE shoots SET locked_stands = ? WHERE id = ?').run(JSON.stringify([...new Set(b.lockedStands)].sort((x, y) => x - y)), r.lastInsertRowid);
       const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score, pattern) VALUES (?,?,?,?,?)');
       for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(r.lastInsertRowid, s.name.trim(), i + 1, sc, s.patterns?.[i] ?? null));
@@ -271,6 +282,31 @@ app.post('/api/v1/shoots', uploadLimiter, express.json({ limit: '1mb' }), (req, 
   }
 });
 
+// Each shooter's average score per stand over the last year, for handicap shoots. Only stands
+// actually shot (not placeholder rows from unfinished shoots) count.
+app.get('/api/v1/handicaps', pollLimiter, (req, res) => {
+  const user = apiUser(req, res);
+  if (!user) return;
+  const period = req.query.period;
+  const lastShoots = { last6shoots: 6, last3shoots: 3 }[period];
+  const cutoff = new Date();
+  if (period === 'all') cutoff.setTime(0);
+  else if (period === '3months') cutoff.setMonth(cutoff.getMonth() - 3);
+  else if (period === '1month') cutoff.setMonth(cutoff.getMonth() - 1);
+  else cutoff.setFullYear(cutoff.getFullYear() - 1);
+  // For "last N shoots" each shooter's own most recent N shoots count, whatever their dates.
+  const rows = db.prepare(`SELECT shooter, AVG(score) AS avg, COUNT(*) AS stands FROM (
+      SELECT r.shooter, r.score, s.shoot_date,
+        DENSE_RANK() OVER (PARTITION BY r.shooter COLLATE NOCASE ORDER BY s.shoot_date DESC, s.id DESC) AS recency
+      FROM results r JOIN shoots s ON s.id = r.shoot_id
+      WHERE s.user_id = ? AND (r.pattern IS NULL OR r.pattern GLOB '*[01]*'))
+    WHERE ${lastShoots ? 'recency <= ?' : 'shoot_date >= ?'}
+    GROUP BY shooter COLLATE NOCASE`).all(user.id, lastShoots ?? cutoff.toISOString().slice(0, 10));
+  res.set('Cache-Control', 'no-store').json({
+    averages: rows.map((r) => ({ name: r.shooter, average: Math.round(r.avg * 100) / 100, stands: r.stands })),
+  });
+});
+
 // The club's current shoot: the newest one still being scored. Apps load it at startup and
 // poll it so several devices can score different stands of the same shoot.
 app.get('/api/v1/shoots/current', pollLimiter, (req, res) => {
@@ -279,12 +315,14 @@ app.get('/api/v1/shoots/current', pollLimiter, (req, res) => {
   const shape = (row) => {
     const tps = row.targets_per_stand;
     const by = new Map();
+    const handicaps = new Map(db.prepare('SELECT shooter, handicap FROM shoot_handicaps WHERE shoot_id = ?').all(row.id).map((h) => [h.shooter, h.handicap]));
     for (const r of db.prepare('SELECT shooter, stand, score, pattern FROM results WHERE shoot_id = ? ORDER BY rowid').all(row.id)) {
       if (!by.has(r.shooter)) by.set(r.shooter, { name: r.shooter, patterns: Array(row.stands).fill('-'.repeat(tps)) });
       if (r.stand >= 1 && r.stand <= row.stands && r.pattern) by.get(r.shooter).patterns[r.stand - 1] = r.pattern;
     }
     return { externalId: row.external_id, name: row.name, venue: row.venue, date: row.shoot_date, time: row.shoot_time,
-      stands: row.stands, targetsPerStand: tps, shooters: [...by.values()] };
+      stands: row.stands, targetsPerStand: tps, handicap: row.is_handicap === 1,
+      shooters: [...by.values()].map((s) => ({ ...s, handicap: handicaps.get(s.name) ?? null })) };
   };
   const cur = db.prepare('SELECT * FROM shoots WHERE user_id = ? AND complete = 0 AND external_id IS NOT NULL ORDER BY id DESC LIMIT 1').get(user.id);
   const ext = typeof req.query.externalId === 'string' ? req.query.externalId.slice(0, 100) : null;
@@ -647,7 +685,10 @@ app.get('/results', needAuth, (req, res) => {
       shooter.patterns[row.stand - 1] = row.pattern;
       shooter.total += row.score;
     }
-    shooters = [...map.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    // Handicap shoots rank on the net score: the total less the shooter's handicap.
+    const handicaps = new Map(db.prepare('SELECT shooter, handicap FROM shoot_handicaps WHERE shoot_id = ?').all(shoot.id).map((h) => [h.shooter, h.handicap]));
+    for (const s of map.values()) { s.handicap = shoot.is_handicap ? (handicaps.get(s.name) ?? 0) : 0; s.net = s.total - s.handicap; }
+    shooters = [...map.values()].sort((a, b) => b.net - a.net || a.name.localeCompare(b.name));
     // tied totals share a place
     const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 1);
     const cutoffDate = cutoff.toISOString().slice(0, 10);
@@ -663,7 +704,7 @@ app.get('/results', needAuth, (req, res) => {
       s.stats = { allTime: summarise(mine), last12: summarise(mine.filter((h) => h.shoot_date >= cutoffDate)) };
       s.stats.cpsa = classify(s.stats);
     });
-    shooters.forEach((s) => { s.place = 1 + shooters.filter((o) => o.total > s.total).length; });
+    shooters.forEach((s) => { s.place = 1 + shooters.filter((o) => o.net > s.net).length; });
   }
   const lockedStands = shoot ? JSON.parse(shoot.locked_stands || '[]') : [];
   res.render('results', { shoots, shoot, shooters, lockedStands });
@@ -704,8 +745,10 @@ app.get('/shoots/:token', needAuth, (req, res) => {
     if (!map.has(r.shooter)) map.set(r.shooter, { name: r.shooter, scores: Array(shoot.stands).fill(null), total: 0 });
     const s = map.get(r.shooter); s.scores[r.stand - 1] = r.score; s.total += r.score;
   }
+  const hcaps = new Map(db.prepare('SELECT shooter, handicap FROM shoot_handicaps WHERE shoot_id = ?').all(shoot.id).map((h) => [h.shooter, h.handicap]));
+  for (const s of map.values()) { s.handicap = shoot.is_handicap ? (hcaps.get(s.name) ?? 0) : 0; s.net = s.total - s.handicap; }
   const sort = req.query.sort === 'name' ? 'name' : 'total';
-  const shooters = [...map.values()].sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : b.total - a.total));
+  const shooters = [...map.values()].sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : b.net - a.net));
   res.render('shoot', { shoot, shooters, lockedStands: JSON.parse(shoot.locked_stands || '[]'), sort, max: shoot.stands * shoot.targets_per_stand });
 });
 
