@@ -163,3 +163,6 @@ footer{text-align:center;color:var(--muted);padding:24px}
 .shoot-picker-item.current{font-weight:400;background:rgba(245,185,40,.16);box-shadow:inset 3px 0 0 #f5b928}
 .shoot-picker-item.current .shoot-picker-label{color:#f5c84c;font-weight:600}
 .joint{font-size:.8rem;color:#9fb0c5;text-transform:uppercase;letter-spacing:.03em}
+.guest-book{text-align:center}
+.gb-yes{color:#3ecf6e;font-weight:700;font-size:1.2rem}
+.gb-no{color:#e5484d;font-weight:700;font-size:1.2rem}

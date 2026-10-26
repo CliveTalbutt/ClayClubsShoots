@@ -172,12 +172,20 @@ for (const [col, def] of [['signed_guest_book', 'INTEGER NOT NULL DEFAULT 0'], [
 }
 // 1 = finished (every older shoot is); live apps upload 0 until the shoot ends.
 if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'is_handicap'").get()) db.exec('ALTER TABLE shoots ADD COLUMN is_handicap INTEGER NOT NULL DEFAULT 0');
+// A device that started its own live shoot while the club already had one in progress is folded into it.
+db.exec(`CREATE TABLE IF NOT EXISTS shoot_aliases (
+  user_id INTEGER NOT NULL,
+  alias TEXT NOT NULL,
+  shoot_id INTEGER NOT NULL REFERENCES shoots(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, alias)
+)`);
 db.exec(`CREATE TABLE IF NOT EXISTS shoot_handicaps (
   shoot_id INTEGER NOT NULL REFERENCES shoots(id) ON DELETE CASCADE,
   shooter TEXT NOT NULL,
   handicap REAL NOT NULL,
   PRIMARY KEY (shoot_id, shooter)
 )`);
+if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'stand_targets'").get()) db.exec('ALTER TABLE shoots ADD COLUMN stand_targets TEXT');
 if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'locked_stands'").get()) db.exec("ALTER TABLE shoots ADD COLUMN locked_stands TEXT NOT NULL DEFAULT '[]'");
 if (!db.prepare("SELECT 1 FROM pragma_table_info('shoots') WHERE name = 'complete'").get()) db.exec('ALTER TABLE shoots ADD COLUMN complete INTEGER NOT NULL DEFAULT 1');
 if (!db.prepare("SELECT 1 FROM pragma_table_info('results') WHERE name = 'pattern'").get()) db.exec('ALTER TABLE results ADD COLUMN pattern TEXT');

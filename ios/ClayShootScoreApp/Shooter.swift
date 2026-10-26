@@ -16,22 +16,19 @@ nonisolated struct Shooter: Identifiable, Sendable {
     var name: String
     var scores: [[Int]]
 
-    init(name: String, numberOfStands: Int, targetsPerStand: Int = 10) {
+    init(name: String, standTargets: [Int]) {
         self.name = name
-        self.scores = Array(
-            repeating: Array(repeating: -1, count: targetsPerStand),
-            count: numberOfStands
-        )
+        self.scores = standTargets.map { Array(repeating: -1, count: $0) }
     }
 
     /// Changes the number of stands, keeping any scores already recorded on the
     /// stands that remain and adding empty stands as needed.
-    mutating func resize(numberOfStands: Int, targetsPerStand: Int) {
-        let emptyStand = Array(repeating: -1, count: targetsPerStand)
-        if scores.count > numberOfStands {
-            scores.removeLast(scores.count - numberOfStands)
-        } else if scores.count < numberOfStands {
-            scores.append(contentsOf: Array(repeating: emptyStand, count: numberOfStands - scores.count))
+    mutating func resize(standTargets: [Int]) {
+        if scores.count > standTargets.count { scores.removeLast(scores.count - standTargets.count) }
+        for (i, n) in standTargets.enumerated() {
+            if i >= scores.count { scores.append(Array(repeating: -1, count: n)) }
+            else if scores[i].count > n { scores[i].removeLast(scores[i].count - n) }
+            else if scores[i].count < n { scores[i].append(contentsOf: Array(repeating: -1, count: n - scores[i].count)) }
         }
     }
 

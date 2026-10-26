@@ -41,8 +41,9 @@ struct RosterView: View {
 
     private var voicePicker: some View {
         let choices = Speaker.voiceChoices()
-        return Picker("Announcer voice", selection: $vm.voiceID) {
+        return Picker("Spoken voice", selection: $vm.voiceID) {
             Text("Default (British)").tag("")
+            Text("Off (no speech)").tag(Speaker.offID)
             if !choices.female.isEmpty {
                 Section("Female") {
                     ForEach(choices.female, id: \.identifier) { Text("\($0.name) (\(Self.accent($0.language)))").tag($0.identifier) }
@@ -90,13 +91,22 @@ struct RosterView: View {
                         ForEach(ShootViewModel.standOptions, id: \.self) { Text("\($0)").tag($0) }
                     }
                     .disabled(vm.isStarted)
+                    Picker("Pairs per stand (all)", selection: $vm.pairsPerStand) {
+                        ForEach(ShootViewModel.pairOptions, id: \.self) { Text("\($0) pairs (\($0 * 2) targets)").tag($0) }
+                    }
+                    .disabled(vm.isStarted)
+                    DisclosureGroup("Pairs on each stand") {
+                        ForEach(0..<vm.numberOfStands, id: \.self) { stand in
+                            Picker("Stand \(stand + 1)", selection: Binding(get: { vm.pairs(forStand: stand) }, set: { vm.setPairs($0, forStand: stand) })) {
+                                ForEach(ShootViewModel.pairOptions, id: \.self) { Text("\($0) pairs").tag($0) }
+                            }
+                            .disabled(vm.isStarted)
+                        }
+                    }
                     Picker("Shooting order", selection: $vm.shootOrder) {
                         ForEach(ShootViewModel.ShootOrder.allCases) { Text($0.title).tag($0) }
                     }
                     .disabled(vm.isStarted)
-                    Picker("Spoken feedback", selection: $vm.feedbackStyle) {
-                        ForEach(ShootViewModel.FeedbackStyle.allCases) { Text($0.title).tag($0) }
-                    }
                     voicePicker
                     Toggle("Handicap shoot", isOn: $vm.isHandicapShoot)
                         .disabled(vm.isStarted)

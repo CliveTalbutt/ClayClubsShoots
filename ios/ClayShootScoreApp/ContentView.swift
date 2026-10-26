@@ -20,6 +20,8 @@ struct ContentView: View {
     @State private var isShowingRoster = false
     /// True only when the roster opened by itself at startup; one the user opened stays until they leave it.
     @State private var rosterOpenedAutomatically = false
+    /// A shoot another device has started, offered on the home screen while this device has none.
+    @State private var availableShoot: RemoteShoot?
     @State private var pastShoots: [PastShoot] = []
     @State private var selectedPastShoot: PastShoot?
     @State private var serverSettings = ClayShootsSettings()
@@ -108,7 +110,7 @@ struct ContentView: View {
                 vm.setVoiceAllowed(onScoreScreen)
                 // A new shoot starts at "Who is shooting?"; a resumed one shows its shooters and scores.
                 // If the club already has a shoot running, go straight to it instead.
-                if vm.shooters.isEmpty { Task { await openCurrentShootOrRoster() } }
+                Task { await openCurrentShootOrRoster() }
                 // Listening is always on: start as soon as the app is showing.
                 vm.resumeListening()
             }
@@ -231,6 +233,7 @@ struct ContentView: View {
             startShootButton
             modeButton
             listenButton
+            announcementsMenu
             serverSettingsButton
         }
 
@@ -270,6 +273,7 @@ struct ContentView: View {
             addShootersButton
             startShootButton
             modeButton
+            announcementsMenu
             serverSettingsButton
             Button {
                 isShowingHelp = true
@@ -368,17 +372,33 @@ struct ContentView: View {
                 .multilineTextAlignment(.center)
             Text("Ready for the next shoot")
                 .foregroundStyle(.secondary)
-            Button {
-                rosterOpenedAutomatically = false
-                isShowingRoster = true
-            } label: {
-                Label("New Shoot", systemImage: "plus.circle.fill")
-                    .font(.headline)
-                    .frame(maxWidth: 360)
-                    .frame(height: 60)
+            if let shoot = availableShoot {
+                Text("A shoot is in progress: \(shoot.name)")
+                    .font(.subheadline)
+                    .multilineTextAlignment(.center)
+                Button {
+                    joinAvailableShoot()
+                } label: {
+                    Label("Join Current Shoot", systemImage: "person.2.fill")
+                        .font(.headline)
+                        .frame(maxWidth: 360)
+                        .frame(height: 60)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+            } else {
+                Button {
+                    rosterOpenedAutomatically = false
+                    isShowingRoster = true
+                } label: {
+                    Label("New Shoot", systemImage: "plus.circle.fill")
+                        .font(.headline)
+                        .frame(maxWidth: 360)
+                        .frame(height: 60)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.green)
             Menu {
                 if pastShoots.isEmpty {
                     Text("No previous shoots yet")
@@ -488,6 +508,19 @@ struct ContentView: View {
     /// Shows that the app is always listening. The microphone bounces every time
     /// words are heard and lights up while someone is speaking. If listening has
     /// stopped because of a problem, tapping it tries again straight away.
+    /// Spoken feedback style and the "Possible" call, changeable at any time during the shoot.
+    private var announcementsMenu: some View {
+        Menu {
+            Picker("Spoken feedback", selection: $vm.feedbackStyle) {
+                ForEach(ShootViewModel.FeedbackStyle.allCases) { Text($0.title).tag($0) }
+            }
+            Toggle("Announce “Possible” score", isOn: $vm.announcePossibleScore)
+        } label: {
+            Label("Announcements", systemImage: "speaker.wave.2")
+        }
+        .help("Spoken feedback and the Possible score call")
+    }
+
     private var listenButton: some View {
         Button {
             vm.resumeListening()
@@ -560,16 +593,31 @@ struct ContentView: View {
         pastShoots = list
     }
 
+    /// At launch: if another device has a shoot running, the home screen offers to join it;
+    /// otherwise a blank device starts at the roster.
     private func openCurrentShootOrRoster() async {
         if let client = serverSettings.client,
            let reply = try? await client.currentShoot(externalId: vm.shootSessionId),
-           let current = reply.current, vm.shooters.isEmpty {
-            vm.adoptRemote(current)
-            exportMessage = "Joined the club's current shoot: \(current.name)."
+           let current = reply.current {
+            if !vm.isStarted { availableShoot = current }
+            let unsent = UploadOutbox.pending.contains { $0.id == vm.shootSessionId }
+            if vm.isStarted, current.externalId != vm.shootSessionId, !unsent {
+                vm.adoptRemote(current)
+                exportMessage = "Joined the club's current shoot: \(current.name)."
+            }
         } else if vm.shooters.isEmpty {
             rosterOpenedAutomatically = true
             isShowingRoster = true
         }
+    }
+
+    private func joinAvailableShoot() {
+        guard let shoot = availableShoot else { return }
+        isShowingRoster = false
+        vm.isAddingShooter = false
+        vm.adoptRemote(shoot)
+        availableShoot = nil
+        exportMessage = "Joined the club's current shoot: \(shoot.name)."
     }
 
     private func refreshCurrentShoot(_ client: ClayShootsClient) async {
@@ -578,18 +626,30 @@ struct ContentView: View {
         // other shoot must never stop it joining the club's current one.
         let unsent = UploadOutbox.pending.contains { $0.id == vm.shootSessionId }
         // A roster opened with nothing chosen yet gives way to a shoot another device has started.
-        if isShowingRoster, rosterOpenedAutomatically, vm.shooters.isEmpty, reply.current != nil { isShowingRoster = false }
-        let choosingShooters = vm.isAddingShooter || isShowingRoster
+        // Once any device has started a shoot, this one stops setting up and shows it.
+        availableShoot = vm.isStarted ? nil : reply.current
+        if availableShoot != nil {
+            isShowingRoster = false
+            vm.isAddingShooter = false
+        }
         // Another device completed this shoot: show the final results here too, locked.
         if let mine = reply.requested, mine.complete, !vm.isFinished, !unsent, vm.isStarted {
             vm.finishShoot()
         }
+        // The server has lost the shoot being scored here (e.g. it was deleted): send it again.
+        if vm.isStarted, !vm.isFinished, reply.requested == nil, !unsent,
+           let upload = vm.makeUpload(externalId: vm.shootSessionId),
+           let body = try? JSONEncoder().encode(upload) {
+            UploadOutbox.save(id: upload.externalId, body: body)
+            await flushOutbox()
+            return
+        }
         guard let current = reply.current else { return }
-        if current.externalId == vm.shootSessionId {
+        if current.externalId == vm.shootSessionId, vm.isStarted {
             let idle = Date.now.timeIntervalSince(lastLocalEdit) > 3
             vm.mergeRemote(current, includeOwned: !unsent && idle)
-        } else if !choosingShooters, vm.isStarted ? !unsent : vm.shooters.isEmpty {
-            // The club has one current shoot (the newest active one) and every device shows it.
+        } else if vm.isStarted, !unsent, current.externalId != vm.shootSessionId {
+            // The club has one current shoot (the newest active one) and every started device shows it.
             vm.adoptRemote(current)
             exportMessage = "Joined the club's current shoot: \(current.name)."
         }

@@ -205,6 +205,7 @@ app.post('/api/v1/shoots', uploadLimiter, express.json({ limit: '1mb' }), (req, 
   if (b.ownedStands != null && !(Array.isArray(b.ownedStands) && b.ownedStands.every((n) => Number.isInteger(n) && n >= 1 && n <= (b.stands || 0)))) errors.push('ownedStands must list stand numbers within the shoot');
   if (b.handicap != null && typeof b.handicap !== 'boolean') errors.push('handicap must be true or false');
   if (Array.isArray(b.shooters) && b.shooters.some((s) => s && s.handicap != null && !(typeof s.handicap === 'number' && s.handicap >= 0 && s.handicap <= 2500))) errors.push('shooter handicap must be a number 0-2500');
+  if (b.standTargets != null && !(Array.isArray(b.standTargets) && b.standTargets.length === b.stands && b.standTargets.every((n) => Number.isInteger(n) && n >= 1 && n <= tps))) errors.push('standTargets must list the targets on each stand, up to targetsPerStand');
   if (b.lockedStands != null && !(Array.isArray(b.lockedStands) && b.lockedStands.every((n) => Number.isInteger(n) && n >= 1 && n <= (b.stands || 0)))) errors.push('lockedStands must list stand numbers within the shoot');
   if (!Array.isArray(b.shooters) || b.shooters.length < 1 || b.shooters.length > 500) errors.push('shooters must be an array of 1-500');
   else {
@@ -214,7 +215,7 @@ app.post('/api/v1/shoots', uploadLimiter, express.json({ limit: '1mb' }), (req, 
       if (seen.has(s.name.trim().toLowerCase())) errors.push(`shooters[${i}] duplicate name`);
       seen.add(s.name.trim().toLowerCase());
       if (!Array.isArray(s.scores) || s.scores.length !== b.stands ||
-          !s.scores.every((x) => Number.isInteger(x) && x >= 0 && x <= tps))
+          !s.scores.every((x, k) => Number.isInteger(x) && x >= 0 && x <= (Array.isArray(b.standTargets) && Number.isInteger(b.standTargets[k]) ? b.standTargets[k] : tps)))
         errors.push(`shooters[${i}].scores must be ${b.stands} integers between 0 and ${tps}`);
       // Optional per-clay detail: one string per stand, '1' hit, '0' miss, '-' not shot.
       if (s.patterns != null) {
@@ -228,14 +229,36 @@ app.post('/api/v1/shoots', uploadLimiter, express.json({ limit: '1mb' }), (req, 
   if (errors.length) return res.status(400).json({ error: 'validation_failed', details: errors });
 
   try {
-    const existing = b.externalId != null
+    let existing = b.externalId != null
       ? db.prepare('SELECT id FROM shoots WHERE user_id = ? AND external_id = ?').get(user.id, b.externalId) : null;
+    // All devices of a club share its one live shoot: an unknown live shoot id joins the club's
+    // unfinished shoot (if it matches in size) and its scores are merged in rather than replacing.
+    let aliased = false;
+    if (!existing && b.externalId != null) {
+      existing = db.prepare('SELECT s.id FROM shoot_aliases a JOIN shoots s ON s.id = a.shoot_id WHERE a.user_id = ? AND a.alias = ?').get(user.id, b.externalId) || null;
+      if (!existing && b.complete === false) {
+        existing = db.prepare("SELECT id FROM shoots WHERE user_id = ? AND complete = 0 AND external_id IS NOT NULL AND stands = ? AND targets_per_stand = ? AND updated_at >= datetime('now', '-12 hours') ORDER BY id ASC LIMIT 1").get(user.id, b.stands, tps) || null;
+        if (existing) db.prepare('INSERT OR REPLACE INTO shoot_aliases (user_id, alias, shoot_id) VALUES (?,?,?)').run(user.id, b.externalId, existing.id);
+      }
+      aliased = !!existing;
+    }
     if (existing) {
       db.transaction(() => {
-        db.prepare("UPDATE shoots SET name = ?, venue = ?, shoot_date = ?, shoot_time = ?, stands = ?, targets_per_stand = ?, updated_at = datetime('now') WHERE id = ?")
+        db.prepare("UPDATE shoots SET updated_at = datetime('now') WHERE id = ?").run(existing.id);
+        if (!aliased && Array.isArray(b.standTargets)) db.prepare('UPDATE shoots SET stand_targets = ? WHERE id = ?').run(JSON.stringify(b.standTargets), existing.id);
+        if (!aliased) db.prepare("UPDATE shoots SET name = ?, venue = ?, shoot_date = ?, shoot_time = ?, stands = ?, targets_per_stand = ? WHERE id = ?")
           .run(b.name.trim(), b.venue?.trim() ?? null, b.date, b.time ?? null, b.stands, tps, existing.id);
         const ins = db.prepare('INSERT OR REPLACE INTO results (shoot_id, shooter, stand, score, pattern) VALUES (?,?,?,?,?)');
-        if (Array.isArray(b.ownedStands)) {
+        if (aliased) {
+          // Keep whichever record of each stand has more clays scored.
+          const row = db.prepare('SELECT pattern FROM results WHERE shoot_id = ? AND shooter = ? AND stand = ?');
+          const shot = (p) => (p ? (p.match(/[01]/g) || []).length : 0);
+          for (const s of b.shooters) s.scores.forEach((sc, i) => {
+            const old = row.get(existing.id, s.name.trim(), i + 1);
+            const mine = s.patterns?.[i] ?? null;
+            if (!old || shot(mine) > shot(old.pattern) || (mine == null && old.pattern == null && sc > 0)) ins.run(existing.id, s.name.trim(), i + 1, sc, mine);
+          });
+        } else if (Array.isArray(b.ownedStands)) {
           // Several devices share one shoot: each writes only the stands assigned to it and
           // leaves the rest (and shooters it has not heard of) as other devices recorded them.
           const owned = new Set(b.ownedStands);
@@ -267,6 +290,7 @@ app.post('/api/v1/shoots', uploadLimiter, express.json({ limit: '1mb' }), (req, 
         "INSERT INTO shoots (user_id, external_id, name, venue, shoot_date, shoot_time, stands, targets_per_stand, complete, updated_at) VALUES (?,?,?,?,?,?,?,?,?, datetime('now'))"
       ).run(user.id, b.externalId ?? null, b.name.trim(), b.venue?.trim() ?? null, b.date, b.time ?? null, b.stands, tps, b.complete === false ? 0 : 1);
       saveHandicaps(r.lastInsertRowid, b);
+      if (Array.isArray(b.standTargets)) db.prepare('UPDATE shoots SET stand_targets = ? WHERE id = ?').run(JSON.stringify(b.standTargets), r.lastInsertRowid);
       if (Array.isArray(b.lockedStands)) db.prepare('UPDATE shoots SET locked_stands = ? WHERE id = ?').run(JSON.stringify([...new Set(b.lockedStands)].sort((x, y) => x - y)), r.lastInsertRowid);
       const ins = db.prepare('INSERT INTO results (shoot_id, shooter, stand, score, pattern) VALUES (?,?,?,?,?)');
       for (const s of b.shooters) s.scores.forEach((sc, i) => ins.run(r.lastInsertRowid, s.name.trim(), i + 1, sc, s.patterns?.[i] ?? null));
@@ -357,12 +381,13 @@ app.get('/api/v1/shoots/current', pollLimiter, (req, res) => {
       if (r.stand >= 1 && r.stand <= row.stands && r.pattern) by.get(r.shooter).patterns[r.stand - 1] = r.pattern;
     }
     return { externalId: row.external_id, name: row.name, venue: row.venue, date: row.shoot_date, time: row.shoot_time,
-      stands: row.stands, targetsPerStand: tps, handicap: row.is_handicap === 1,
+      stands: row.stands, targetsPerStand: tps, standTargets: row.stand_targets ? JSON.parse(row.stand_targets) : null, handicap: row.is_handicap === 1,
       shooters: [...by.values()].map((s) => ({ ...s, handicap: handicaps.get(s.name) ?? null })) };
   };
   const cur = db.prepare('SELECT * FROM shoots WHERE user_id = ? AND complete = 0 AND external_id IS NOT NULL ORDER BY id DESC LIMIT 1').get(user.id);
   const ext = typeof req.query.externalId === 'string' ? req.query.externalId.slice(0, 100) : null;
-  const mine = ext ? db.prepare('SELECT complete FROM shoots WHERE user_id = ? AND external_id = ?').get(user.id, ext) : null;
+  const mine = ext ? (db.prepare('SELECT complete FROM shoots WHERE user_id = ? AND external_id = ?').get(user.id, ext)
+    || db.prepare('SELECT s.complete FROM shoot_aliases a JOIN shoots s ON s.id = a.shoot_id WHERE a.user_id = ? AND a.alias = ?').get(user.id, ext)) : null;
   res.set('Cache-Control', 'no-store').json({
     current: cur ? shape(cur) : null,
     requested: mine ? { externalId: ext, complete: mine.complete === 1 } : null,

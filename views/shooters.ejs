@@ -40,7 +40,7 @@
   </form>
   <% if (roster.length) { %>
   <table class="results-table social-table">
-    <thead><tr><th>Name</th><th>Shoots</th><th>Email</th><th>Type</th><th>Guest book</th></tr></thead>
+    <thead><tr><th>Name</th><th>Shoots</th><th>Email</th><th>Type</th><th>Guest book signed</th></tr></thead>
     <tbody>
       <% roster.forEach(r => { const cls = r.status === 'expired' ? 'tag-expired' : (r.kind === 'member' ? 'tag-member' : 'tag-guest'); %>
         <tr class="roster-row" data-edit="<%= JSON.stringify({ id: r.id, guid: r.guid, name: r.name, email: r.email, kind: r.is_admin ? 'admin' : r.kind, status: r.status, signed: r.signed_guest_book === 1 }) %>">
@@ -59,7 +59,7 @@
               <form method="post" action="/shooters/roster/<%= r.id %>/verify" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn small secondary"><%= r.verify_sent_at ? 'Resend' : 'Verify' %></button></form>
             <% } %></td>
           <td><span class="<%= cls %>"><%= r.status === 'expired' ? 'Expired ' + r.kind : (r.kind === 'member' ? 'Member' : 'Guest') %></span><% if (r.is_admin) { %> <span class="badge ok">Admin</span><% } %></td>
-          <td><%= r.kind === 'guest' ? (r.signed_guest_book ? 'Has signed the guest book' : 'Not signed') : '' %></td>
+          <td class="guest-book"><% if (r.kind === 'guest') { %><% if (r.signed_guest_book) { %><span class="gb-yes" role="img" aria-label="Signed" title="Signed">&#10003;</span><% } else { %><span class="gb-no" role="img" aria-label="Not signed" title="Not signed">&#10007;</span><% } %><% } %></td>
         </tr>
       <% }) %>
     </tbody>

@@ -35,6 +35,7 @@ nonisolated struct ShootUpload: Encodable, Sendable {
     var ownedStands: [Int]? = nil
     var lockedStands: [Int]? = nil
     var handicap: Bool? = nil
+    var standTargets: [Int]? = nil
 }
 
 /// The club's shoot that is still being scored, as other devices have uploaded it.
@@ -52,6 +53,8 @@ nonisolated struct RemoteShoot: Decodable, Sendable {
     let time: String?
     let stands: Int
     let targetsPerStand: Int
+    /// Targets on each stand when stands differ; nil means every stand has targetsPerStand.
+    let standTargets: [Int]?
     let shooters: [Entry]
     let handicap: Bool?
 }
@@ -482,7 +485,7 @@ extension ShootViewModel {
     /// the server requires distinct names.
     func makeUpload(externalId: String, forceComplete: Bool = false) -> ShootUpload? {
         guard !shooters.isEmpty else { return nil }
-        let targets = shooters.first?.scores.first?.count ?? Self.targetsPerStand
+        let maxTargets = targetsPerStand
         var used = Set<String>()
         let entries = shooters.enumerated().map { index, shooter -> ShootUpload.Entry in
             var base = shooter.name.trimmingCharacters(in: .whitespacesAndNewlines).capitalized
@@ -494,12 +497,12 @@ extension ShootViewModel {
             used.insert(name.lowercased())
             // Stands scored by another device are sent empty; the server ignores them.
             let scores = (0..<numberOfStands).map { stand in
-                shooter.scores.indices.contains(stand) && isStandOwned(stand) ? min(shooter.standTotal(stand), targets) : 0
+                shooter.scores.indices.contains(stand) && isStandOwned(stand) ? min(shooter.standTotal(stand), targets(forStand: stand)) : 0
             }
             let patterns = (0..<numberOfStands).map { stand -> String in
                 let row = shooter.scores.indices.contains(stand) && isStandOwned(stand) ? shooter.scores[stand] : []
-                return String((0..<targets).map { t -> Character in
-                    let v = t < row.count ? row[t] : -1
+                return String((0..<maxTargets).map { t -> Character in
+                    let v = t < row.count ? row[t] : -1   // beyond this stand's targets: "-"
                     return v > 0 ? "1" : (v == 0 ? "0" : "-")
                 })
             }
@@ -516,12 +519,13 @@ extension ShootViewModel {
             date: date,
             time: String(format: "%02d:%02d", Calendar.current.component(.hour, from: shootStart), Calendar.current.component(.minute, from: shootStart)),
             stands: numberOfStands,
-            targetsPerStand: targets,
+            targetsPerStand: maxTargets,
             complete: isFinished || forceComplete,
             shooters: entries,
             ownedStands: ownedStands.map { $0.sorted().map { $0 + 1 } },
             lockedStands: (0..<numberOfStands).filter { isStandLocked($0) && isStandOwned($0) }.map { $0 + 1 },
-            handicap: isHandicapShoot ? true : nil
+            handicap: isHandicapShoot ? true : nil,
+            standTargets: standTargets
         )
     }
 

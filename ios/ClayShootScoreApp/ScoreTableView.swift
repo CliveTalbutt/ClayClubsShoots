@@ -74,7 +74,7 @@ struct ScoreTableView: View {
     private let standTotalWidth: CGFloat = 22
     private let grandTotalWidth: CGFloat = 44
     private let placeWidth: CGFloat = 72
-    private let targetCount = ShootViewModel.targetsPerStand
+    private func targetCount(_ stand: Int) -> Int { vm.targets(forStand: stand) }
 
     /// Small fonts keep the tick, cross and totals in proportion with the narrow cells.
     private let cellFont: Font = .caption2
@@ -85,7 +85,7 @@ struct ScoreTableView: View {
     /// Width of the bordered block of target cells for one stand, so the header
     /// lines up with the rows even though the table scrolls horizontally.
     private func standCellsWidth(for stand: Int) -> CGFloat {
-        CGFloat(targetCount) * cellWidth(for: stand) + CGFloat(targetCount - 1) * targetCellSpacing + 4
+        CGFloat(targetCount(stand)) * cellWidth(for: stand) + CGFloat(targetCount(stand) - 1) * targetCellSpacing + 4
     }
 
     /// The current shooter and stand are marked with a green frame; cells are never resized.
@@ -350,7 +350,7 @@ struct ScoreTableView: View {
 
         return HStack(spacing: 2) {
             HStack(spacing: targetCellSpacing) {
-                ForEach(0..<targetCount, id: \.self) { target in
+                ForEach(0..<targetCount(stand), id: \.self) { target in
                     let score = target < standScores.count ? standScores[target] : -1
                     cellSymbol(for: score)
                         .frame(width: cellWidth(for: stand), height: targetCellHeight)

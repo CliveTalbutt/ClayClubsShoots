@@ -33,8 +33,10 @@ class ShootViewModel {
     static let defaultNumberOfStands = 5
     /// The stand counts that can be chosen in the control panel.
     static let standOptions = Array(1...25)
-    /// The number of targets shot on each stand.
-    static let targetsPerStand = 10
+    /// The pair counts that can be chosen: 2 to 10 pairs per stand.
+    static let pairOptions = Array(2...10)
+    static let defaultPairs = 5
+    private static let pairsKey = "pairsPerStand"
     /// The most shooters a shoot can have.
     static let maxShooters = 20
     /// How long the speaker must pause between names before a name is added.
@@ -191,6 +193,44 @@ class ShootViewModel {
         }
     }
 
+    /// Pairs of targets on each new stand (default 5, so 10 targets). Changing it sets every stand.
+    var pairsPerStand: Int = {
+        let saved = UserDefaults.standard.integer(forKey: "pairsPerStand")
+        return ShootViewModel.pairOptions.contains(saved) ? saved : ShootViewModel.defaultPairs
+    }() {
+        didSet {
+            guard pairsPerStand != oldValue else { return }
+            if isStarted { pairsPerStand = oldValue; return }
+            UserDefaults.standard.set(pairsPerStand, forKey: Self.pairsKey)
+            standPairs = Array(repeating: pairsPerStand, count: numberOfStands)
+        }
+    }
+
+    /// Pairs on each stand; each stand can differ. Fixed once the shoot starts.
+    var standPairs: [Int] = (UserDefaults.standard.array(forKey: "standPairsList") as? [Int]) ?? [] {
+        didSet {
+            guard standPairs != oldValue else { return }
+            if isStarted { standPairs = oldValue; return }
+            UserDefaults.standard.set(standPairs, forKey: "standPairsList")
+            applyStandCount()
+        }
+    }
+
+    func pairs(forStand stand: Int) -> Int {
+        standPairs.indices.contains(stand) ? standPairs[stand] : pairsPerStand
+    }
+    func targets(forStand stand: Int) -> Int { pairs(forStand: stand) * 2 }
+    var standTargets: [Int] { (0..<numberOfStands).map { targets(forStand: $0) } }
+    /// The widest stand, in targets.
+    var targetsPerStand: Int { standTargets.max() ?? pairsPerStand * 2 }
+
+    func setPairs(_ pairs: Int, forStand stand: Int) {
+        guard !isStarted, stand >= 0, stand < numberOfStands, Self.pairOptions.contains(pairs) else { return }
+        var list = (0..<numberOfStands).map { self.pairs(forStand: $0) }
+        list[stand] = pairs
+        standPairs = list
+    }
+
     private static let standsByShootKey = "standsByShoot"
 
     private static func shootKey(_ name: String) -> String {
@@ -274,8 +314,11 @@ class ShootViewModel {
         shootSessionId = snap.sessionId
         shootStart = snap.shootStart
         kinds = snap.kinds
+        if let rows = snap.shooters.first?.scores, !rows.isEmpty, rows.allSatisfy({ $0.count >= 4 && $0.count <= 20 && $0.count % 2 == 0 }) {
+            standPairs = rows.map { $0.count / 2 }
+        }
         shooters = snap.shooters.map { entry in
-            var shooter = Shooter(name: entry.name, numberOfStands: numberOfStands, targetsPerStand: Self.targetsPerStand)
+            var shooter = Shooter(name: entry.name, standTargets: standTargets)
             for (stand, row) in entry.scores.enumerated() where shooter.scores.indices.contains(stand) && row.count == shooter.scores[stand].count {
                 shooter.scores[stand] = row
             }
@@ -283,7 +326,7 @@ class ShootViewModel {
         }
         currentShooterIndex = snap.currentShooterIndex.flatMap { shooters.indices.contains($0) ? $0 : nil }
         currentStand = min(max(snap.currentStand, 0), numberOfStands)
-        currentTarget = min(max(snap.currentTarget, 0), Self.targetsPerStand - 1)
+        currentTarget = min(max(snap.currentTarget, 0), max(targets(forStand: currentStand), 1) - 1)
         isStarted = snap.started ?? hasAnyScore
         confirmedSession = snap.sessionId
         isHandicapShoot = snap.handicapShoot ?? false
@@ -328,6 +371,11 @@ class ShootViewModel {
         didSet { UserDefaults.standard.set(feedbackStyle.rawValue, forKey: "feedbackStyle") }
     }
 
+    /// Whether "Possible n" is shown and spoken before a stand's last pair. On by default.
+    var announcePossibleScore: Bool = UserDefaults.standard.object(forKey: "announcePossible") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(announcePossibleScore, forKey: "announcePossible") }
+    }
+
     /// Identifier of the chosen announcer voice; empty means the best available British voice.
     var voiceID: String = UserDefaults.standard.string(forKey: "voiceID") ?? "" {
         didSet {
@@ -338,6 +386,7 @@ class ShootViewModel {
 
     /// Plays a short sample in the chosen voice.
     func previewVoice() {
+        guard voiceID != Speaker.offID else { return }
         speaker.say("Pull! Welcome to the shoot.")
     }
 
@@ -564,8 +613,12 @@ class ShootViewModel {
     /// Resizes every shooter's score sheet to the current number of stands and keeps
     /// the scoring position within range.
     private func applyStandCount() {
+        if standPairs.count != numberOfStands {
+            let fixed = (0..<numberOfStands).map { pairs(forStand: $0) }
+            if fixed != standPairs { standPairs = fixed; return }
+        }
         for index in shooters.indices {
-            shooters[index].resize(numberOfStands: numberOfStands, targetsPerStand: Self.targetsPerStand)
+            shooters[index].resize(standTargets: standTargets)
         }
         // `currentStand == numberOfStands` means every stand has been shot, so it is
         // allowed to sit one past the last stand.
@@ -662,7 +715,7 @@ class ShootViewModel {
             shooters: shooters,
             placings: placings,
             numberOfStands: numberOfStands,
-            targetsPerStand: Self.targetsPerStand
+            targetsPerStand: targetsPerStand
         )
     }
 
@@ -757,8 +810,7 @@ class ShootViewModel {
         guard !name.isEmpty, !isFull, !isStarted else { return }
         shooters.append(
             Shooter(name: name.lowercased(),
-                    numberOfStands: numberOfStands,
-                    targetsPerStand: Self.targetsPerStand)
+                    standTargets: standTargets)
         )
         if currentShooterIndex == nil {
             currentShooterIndex = 0
@@ -840,9 +892,9 @@ class ShootViewModel {
 
     /// Stands where the scorer chose to keep editing, with when they last changed and their scores then.
     private var editingStands: [Int: (changed: Date, scores: String)] = [:]
-    static let editLockDelay: TimeInterval = 15
+    static let editLockDelay: TimeInterval = 2
 
-    /// A stand is locked once it is complete and confirmed (or after 15 s without edits). Stands
+    /// A stand is locked once it is complete and confirmed (or after 2 s without edits). Stands
     /// scored by other devices lock as soon as they are complete, since this device can't edit them.
     func isStandLocked(_ stand: Int) -> Bool {
         isStandComplete(stand) && (confirmedStands.contains(stand) || !isStandOwned(stand))
@@ -869,7 +921,7 @@ class ShootViewModel {
             saveSnapshot()
         }
 
-        // The last stand has no later stand, so once complete it locks after a spell without edits.
+        // The last stand has no later stand, so once complete it locks after 2 s without edits.
         let last = numberOfStands - 1
         if last >= 0, isStandComplete(last), !confirmedStands.contains(last) {
             let key = scoresKey(last)
@@ -1603,7 +1655,7 @@ class ShootViewModel {
             selectShooter(at: match.index)
             newWords.removeSubrange(match.range)
             newWords.removeAll { SpeechMatcher.soundsLike($0, "shooter") }
-            if currentTarget >= Self.targetsPerStand, currentStand < numberOfStands {
+            if currentStand < numberOfStands, currentTarget >= targets(forStand: currentStand) {
                 // Their scores would be ignored, so say why rather than stay silent.
                 var message = "\(shooters[match.index].name.capitalized) has already shot stand \(currentStand + 1)."
                 if currentStand + 1 < numberOfStands {
@@ -1936,7 +1988,7 @@ class ShootViewModel {
            let next = scores[currentStand].firstIndex(where: { $0 < 0 }) {
             currentTarget = next
         } else {
-            currentTarget = Self.targetsPerStand
+            currentTarget = targets(forStand: currentStand)
         }
     }
 
@@ -1967,8 +2019,12 @@ class ShootViewModel {
               shooters.indices.contains(index),
               shooters[index].scores.indices.contains(currentStand),
               isStandOwned(currentStand),
-              currentTarget < Self.targetsPerStand,
+              currentTarget < targets(forStand: currentStand),
               Date.now >= scoringPausedUntil else { return }
+
+        // Always use the first free entry; never overwrite a score that is already there.
+        guard let free = firstUnscoredTarget(ofShooterAt: index, stand: currentStand) else { return }
+        currentTarget = free
 
         shooters[index].scores[currentStand][currentTarget] = value
         // Confirmation beep for every recorded score, spoken or manual.
@@ -1976,12 +2032,12 @@ class ShootViewModel {
         UINotificationFeedbackGenerator().notificationOccurred(value == 1 ? .success : .warning)
         if announce { speaker.say(value == 1 ? "Hit" : "Miss") }
 
-        currentTarget += 1
+        currentTarget = firstUnscoredTarget(ofShooterAt: index, stand: currentStand) ?? targets(forStand: currentStand)
 
-        if currentTarget == Self.targetsPerStand - 2 {
+        if currentTarget == targets(forStand: currentStand) - 2 {
             announcePossible(shooterIndex: index, stand: currentStand)
         }
-        if currentTarget >= Self.targetsPerStand {
+        if currentTarget >= targets(forStand: currentStand) {
             let finished = (index: index, stand: currentStand)
             advanceToNextShooter()
             announceStandDone(shooterIndex: finished.index, stand: finished.stand)
@@ -2028,15 +2084,15 @@ class ShootViewModel {
 
     // MARK: Shared shoot
 
-    private static func scores(fromPatterns patterns: [String], stand: Int) -> [Int]? {
-        guard patterns.indices.contains(stand), patterns[stand].count == targetsPerStand else { return nil }
-        return patterns[stand].map { $0 == "1" ? 1 : ($0 == "0" ? 0 : -1) }
+    private func scores(fromPatterns patterns: [String], stand: Int) -> [Int]? {
+        guard patterns.indices.contains(stand), patterns[stand].count >= targets(forStand: stand) else { return nil }
+        return patterns[stand].prefix(targets(forStand: stand)).map { $0 == "1" ? 1 : ($0 == "0" ? 0 : -1) }
     }
 
     private func makeShooter(from entry: RemoteShoot.Entry) -> Shooter {
-        var shooter = Shooter(name: entry.name, numberOfStands: numberOfStands, targetsPerStand: Self.targetsPerStand)
+        var shooter = Shooter(name: entry.name, standTargets: standTargets)
         for stand in shooter.scores.indices {
-            if let row = Self.scores(fromPatterns: entry.patterns, stand: stand) { shooter.scores[stand] = row }
+            if let row = scores(fromPatterns: entry.patterns, stand: stand) { shooter.scores[stand] = row }
         }
         return shooter
     }
@@ -2056,6 +2112,10 @@ class ShootViewModel {
             if let start = Calendar.current.date(from: components) { shootStart = start }
         }
         numberOfStands = remote.stands
+        let remoteTargets = remote.standTargets ?? Array(repeating: remote.targetsPerStand, count: remote.stands)
+        if remoteTargets.count == remote.stands, remoteTargets.allSatisfy({ $0 >= 4 && $0 <= 20 && $0 % 2 == 0 }) {
+            standPairs = remoteTargets.map { $0 / 2 }
+        }
         isHandicapShoot = remote.handicap ?? false
         handicaps = Dictionary(remote.shooters.compactMap { e in e.handicap.map { (Self.handicapKey(e.name), $0) } }, uniquingKeysWith: { $1 })
         shooters = remote.shooters.map { makeShooter(from: $0) }
@@ -2088,7 +2148,7 @@ class ShootViewModel {
         for entry in remote.shooters {
             if let index = shooters.firstIndex(where: { key($0.name) == key(entry.name) }) {
                 for stand in shooters[index].scores.indices where includeOwned || !isStandOwned(stand) {
-                    if let row = Self.scores(fromPatterns: entry.patterns, stand: stand), shooters[index].scores[stand] != row {
+                    if let row = scores(fromPatterns: entry.patterns, stand: stand), shooters[index].scores[stand] != row {
                         shooters[index].scores[stand] = row
                         lastChange = (index, stand)
                         changedStands.insert(stand)
@@ -2226,9 +2286,9 @@ class ShootViewModel {
     /// Before the final pair: the stand score the shooter reaches if both targets are hit.
     /// Input is not paused, so the pair can be scored straight away.
     private func announcePossible(shooterIndex: Int, stand: Int) {
-        guard shooters.indices.contains(shooterIndex), shooters[shooterIndex].scores.indices.contains(stand) else { return }
+        guard announcePossibleScore, shooters.indices.contains(shooterIndex), shooters[shooterIndex].scores.indices.contains(stand) else { return }
         let row = shooters[shooterIndex].scores[stand]
-        guard row.prefix(Self.targetsPerStand - 2).allSatisfy({ $0 >= 0 }) else { return }
+        guard row.prefix(max(row.count - 2, 0)).allSatisfy({ $0 >= 0 }) else { return }
         standSummary = StandSummary(shooter: shooters[shooterIndex].name.capitalized, stand: stand + 1,
                                     score: shooters[shooterIndex].standTotal(stand), total: row.count, next: "",
                                     possible: shooters[shooterIndex].standTotal(stand) + 2)
@@ -2336,6 +2396,7 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
     private var speaking = false
     private var quietAt = Date.distantPast
 
+    static let offID = "off"
     var voiceID = ""
 
     /// Up to five female and five male English voices, best quality and British accents first.
@@ -2372,6 +2433,7 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
 
     /// Hits and misses cut across whatever is being said; announcements queue behind them.
     func say(_ text: String, interrupt: Bool = true) {
+        guard voiceID != Speaker.offID else { return }
         if interrupt { synthesizer.stopSpeaking(at: .immediate) }
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = currentVoice

@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clay Shoots – Complete Documentation</title>
+<style>
+  :root{--bg:#0f1722;--card:#1a2433;--line:#2a3649;--text:#e6edf5;--muted:#9fb0c5;--gold:#f5c84c;--green:#3ecf6e;--red:#e5484d}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.6 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text)}
+  .layout{display:flex;max-width:1280px;margin:0 auto}
+  nav.toc{position:sticky;top:0;align-self:flex-start;height:100vh;overflow:auto;width:280px;flex:none;padding:28px 20px;border-right:1px solid var(--line)}
+  nav.toc h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 10px}
+  nav.toc a{display:block;color:var(--text);text-decoration:none;padding:4px 8px;border-radius:6px;font-size:.92rem}
+  nav.toc a:hover{background:var(--card);color:var(--gold)}
+  nav.toc a.sub{padding-left:22px;color:var(--muted);font-size:.85rem}
+  main{flex:1;min-width:0;padding:36px 44px 80px}
+  h1{font-size:2.2rem;margin:0 0 6px}
+  h2{font-size:1.6rem;margin:56px 0 12px;padding-top:12px;border-top:1px solid var(--line);color:var(--gold)}
+  h3{font-size:1.2rem;margin:30px 0 8px}
+  p.lead{color:var(--muted);font-size:1.1rem;margin-top:0}
+  a{color:var(--gold)}
+  code{background:#0b111a;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:.88em}
+  pre{background:#0b111a;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto}
+  pre code{border:0;padding:0;background:none}
+  table{width:100%;border-collapse:collapse;margin:12px 0 20px;font-size:.93rem}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;background:rgba(255,255,255,.03)}
+  .note,.warn{border-radius:10px;padding:12px 16px;margin:16px 0;border:1px solid var(--line);background:var(--card)}
+  .note{border-left:4px solid var(--gold)}
+  .warn{border-left:4px solid var(--red)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin:16px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px}
+  .card h4{margin:0 0 6px;color:var(--gold)}
+  .tag{display:inline-block;font-size:.72rem;padding:1px 8px;border-radius:99px;background:var(--line);color:var(--muted);margin-left:6px;vertical-align:middle}
+  .diagram{font-family:ui-monospace,Menlo,monospace;font-size:.85rem;white-space:pre;background:#0b111a;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;line-height:1.35}
+  footer{margin-top:60px;color:var(--muted);font-size:.85rem;border-top:1px solid var(--line);padding-top:16px}
+  @media(max-width:900px){nav.toc{display:none}main{padding:24px 18px}}
+  @media print{nav.toc{display:none}body{background:#fff;color:#000}h2{color:#000}.card,.note,.warn,pre,code{background:#f5f5f5;color:#000}}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc">
+  <h2>Contents</h2>
+  <a href="#overview">1. Overview</a>
+  <a href="#architecture">2. Architecture</a>
+  <a href="#install">3. Installation &amp; running</a>
+  <a class="sub" href="#config">Configuration (.env)</a>
+  <a class="sub" href="#https">HTTPS &amp; key pinning</a>
+  <a class="sub" href="#ios-build">Building the iOS app</a>
+  <a href="#roles">4. Accounts &amp; roles</a>
+  <a href="#website">5. Website guide</a>
+  <a class="sub" href="#w-results">Results</a>
+  <a class="sub" href="#w-leaderboard">Leaderboard</a>
+  <a class="sub" href="#w-dashboard">Dashboard</a>
+  <a class="sub" href="#w-shooters">Shooters (roster)</a>
+  <a class="sub" href="#w-social">Social</a>
+  <a class="sub" href="#w-account">Account</a>
+  <a class="sub" href="#w-clubs">Shoot clubs</a>
+  <a href="#app">6. iPhone / iPad app</a>
+  <a class="sub" href="#a-setup">Connecting to the server</a>
+  <a class="sub" href="#a-new">Starting a shoot</a>
+  <a class="sub" href="#a-scoring">Scoring</a>
+  <a class="sub" href="#a-voice">Voice control</a>
+  <a class="sub" href="#a-speech">Spoken announcements</a>
+  <a class="sub" href="#a-handicap">Handicap shoots</a>
+  <a class="sub" href="#a-sync">Multi-device sync</a>
+  <a class="sub" href="#a-finish">Finishing a shoot</a>
+  <a class="sub" href="#a-history">Previous shoots</a>
+  <a href="#rules">7. Scoring rules &amp; calculations</a>
+  <a href="#api">8. API reference</a>
+  <a href="#data">9. Data model</a>
+  <a href="#notifications">10. Email, social &amp; reminders</a>
+  <a href="#billing">11. Billing &amp; allowances</a>
+  <a href="#security">12. Security</a>
+  <a href="#backup">13. Backup &amp; restore</a>
+  <a href="#ops">14. Operations</a>
+  <a href="#troubleshooting">15. Troubleshooting</a>
+  <a href="#files">16. File map</a>
+  <a href="#limits">17. Known limitations</a>
+</nav>
+
+<main>
+<h1>&#9678; Clay Shoots</h1>
+<p class="lead">Live clay-shooting scoring for clubs: an iPhone/iPad scoring app, a club website with results and leaderboards, and automatic emails and social posts.</p>
+<p>Document covers the system as built in the <code>ClayClubsShoots</code> repository. Everything described here is in the code; items that need a decision or that are untested are flagged in <a href="#limits">Known limitations</a>.</p>
+
+<h2 id="overview">1. Overview</h2>
+<div class="grid">
+  <div class="card"><h4>Scoring app</h4>SwiftUI app for iPhone and iPad. Scores by voice, keyboard or buttons. Several devices share one shoot at the same time.</div>
+  <div class="card"><h4>Website</h4>Node/Express site with results, leaderboard, shoot history, roster management, social posting and account tools.</div>
+  <div class="card"><h4>Automation</h4>Results emailed to each shooter, results posted to social media, daily backups and subscription reminders.</div>
+</div>
+<h3>Typical flow</h3>
+<ol>
+  <li>Club admin signs up on the website, adds the roster of members and guests, and creates an API key.</li>
+  <li>Each scoring device connects to the server once (URL, key and certificate fingerprint).</li>
+  <li>On the shoot day, one device starts a New Shoot, picking shooters and options. Other devices join automatically.</li>
+  <li>Shooters are scored by voice or taps. Scores upload as they are entered; the website updates live.</li>
+  <li>When every stand is locked, the shoot is finished: final results are spoken, emailed to shooters and posted to social accounts.</li>
+</ol>
+
+<h2 id="architecture">2. Architecture</h2>
+<div class="diagram">  iPhone / iPad app (SwiftUI)                    Browser (members, admins)
+  ──────────────────────────                     ─────────────────────────
+  ShootViewModel  ─ voice, scoring, sync               │  HTTPS (session + CSRF)
+  ClayShootsClient ─ HTTPS + Bearer API key            │
+          │  poll every 2 s / upload on change         │
+          ▼                                            ▼
+  ┌─────────────────────────  Node / Express  ─────────────────────────┐
+  │ /api/v1/*  (API key)          website routes (EJS views)           │
+  │ rate limiting · helmet CSP · TLS (self-signed or real cert)        │
+  │ mailer · social posters · reminders · daily backup · payments      │
+  └──────────────────────────────┬─────────────────────────────────────┘
+                                 ▼
+                        SQLite  data/app.db  (better-sqlite3)</div>
+<table>
+  <tr><th>Layer</th><th>Technology</th></tr>
+  <tr><td>Server</td><td>Node.js, Express 4, EJS templates, helmet, express-rate-limit, express-session (SQLite store)</td></tr>
+  <tr><td>Database</td><td>SQLite via better-sqlite3 (<code>data/app.db</code>)</td></tr>
+  <tr><td>Auth</td><td>bcrypt passwords, optional TOTP two-factor (otplib, QR codes), per-club API key (stored hashed)</td></tr>
+  <tr><td>Payments</td><td>Stripe, PayPal, GoCardless, Square, Mollie (each optional)</td></tr>
+  <tr><td>Email</td><td>nodemailer (SMTP)</td></tr>
+  <tr><td>Mobile app</td><td>SwiftUI, Speech framework (recognition), AVSpeechSynthesizer (announcements)</td></tr>
+</table>
+
+<h2 id="install">3. Installation &amp; running</h2>
+<h3>Server</h3>
+<pre><code>cd ClayClubsShoots
+npm install
+cp .env.example .env      # then edit .env
+npm start                 # production run
+npm run dev               # auto-restart on file changes</code></pre>
+<p>On start-up the server prints its address (e.g. <code>https://192.168.1.100:3000</code>) and the <strong>server key fingerprint</strong> to enter in the phone app.</p>
+
+<h3 id="config">Configuration (<code>.env</code>)</h3>
+<div class="warn"><strong>Never commit or share <code>.env</code></strong> – it holds secrets. It and <code>data/</code> are git-ignored.</div>
+<table>
+  <tr><th>Variable</th><th>Purpose</th></tr>
+  <tr><td><code>PORT</code>, <code>BASE_URL</code></td><td>Listen port and the public URL used in emails and links.</td></tr>
+  <tr><td><code>SESSION_SECRET</code></td><td>Signs login sessions. Generate with <code>openssl rand -hex 32</code>.</td></tr>
+  <tr><td><code>APP_ENCRYPTION_KEY</code></td><td>Encrypts 2FA secrets and social credentials at rest.</td></tr>
+  <tr><td><code>CURRENCY</code>, <code>PRICE_MONTHLY_PENCE</code>, <code>PRICE_ANNUAL_PENCE</code></td><td>Subscription pricing. With no provider configured every account has full access.</td></tr>
+  <tr><td><code>STRIPE_*</code>, <code>PAYPAL_*</code>, <code>GOCARDLESS_*</code>, <code>SQUARE_*</code>, <code>MOLLIE_API_KEY</code></td><td>Payment provider credentials; leave blank to disable a provider.</td></tr>
+  <tr><td><code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_SECURE</code>, <code>SMTP_USER</code>, <code>SMTP_PASS</code>, <code>MAIL_FROM</code></td><td>Outgoing email. Blank <code>SMTP_HOST</code> disables all email.</td></tr>
+  <tr><td><code>TLS_CERT_FILE</code>, <code>TLS_KEY_FILE</code></td><td>Use a real certificate (e.g. Let's Encrypt). If unset, a self-signed one is created.</td></tr>
+  <tr><td><code>DB_IN_MEMORY</code>, <code>SEED_EXAMPLE_DATA</code></td><td>Testing only.</td></tr>
+</table>
+
+<h3 id="https">HTTPS &amp; key pinning</h3>
+<p>The server runs HTTPS only. For a private network it creates a self-signed certificate in <code>data/tls/</code>. The phone app does not trust certificates by authority; instead it <strong>pins the SHA-256 of the server's public key</strong>. Enter the fingerprint printed at server start-up in the app's server settings. If the certificate is ever regenerated, the fingerprint changes and each device must be updated.</p>
+
+<h3 id="ios-build">Building the iOS app</h3>
+<ol>
+  <li>Open <code>ios/ClayShootScoreApp.xcodeproj</code> in Xcode (the project uses a file-system synchronised group, so new Swift files are picked up automatically).</li>
+  <li>Select the device and build, or from a terminal:
+<pre><code>cd ios
+xcodebuild -project ClayShootScoreApp.xcodeproj -scheme ClayShootScoreApp \
+  -destination "id=&lt;DEVICE-UDID&gt;" -configuration Debug \
+  -derivedDataPath /tmp/ClayShootScoreApp-&lt;UDID&gt; -allowProvisioningUpdates build
+xcrun devicectl device install app --device &lt;UDID&gt; /tmp/ClayShootScoreApp-&lt;UDID&gt;/Build/Products/Debug-iphoneos/*.app
+xcrun devicectl device process launch --device &lt;UDID&gt; com.clivetalbutt.ClayShootScoreApp --terminate-existing</code></pre></li>
+  <li>Bundle identifier: <code>com.clivetalbutt.ClayShootScoreApp</code>. The app needs microphone and speech-recognition permission.</li>
+</ol>
+
+<h2 id="roles">4. Accounts &amp; roles</h2>
+<table>
+  <tr><th>Role</th><th>Who</th><th>Can do</th></tr>
+  <tr><td><strong>Super admin</strong></td><td>The system owner (<code>is_super</code>)</td><td>Everything, including the <em>Shoot clubs</em> menu (view/act as any club, subscriptions, reminders), backups and restore, API key.</td></tr>
+  <tr><td><strong>Admin</strong></td><td>Club account holder, or a roster member flagged admin</td><td>Manage roster, view all results, <strong>delete shoots</strong>, social accounts, account settings.</td></tr>
+  <tr><td><strong>Member</strong></td><td>Roster member (kind = member, not admin)</td><td>View results and leaderboard. Cannot delete shoots (enforced on the server as well as hidden in the UI).</td></tr>
+</table>
+<p>Sign-in uses email and password, with optional two-factor authentication (authenticator app). Members verify their email address through a link before they can sign in.</p>
+
+<h2 id="website">5. Website guide</h2>
+<p>The top navigation shows the current shoot name, your email and role. Menus: <strong>Shoot clubs</strong> (super admin only, top level), <strong>Dashboard ▾</strong> (Results, Leaderboard) and <strong>Account ▾</strong> (Shooters, Social, Sign out).</p>
+
+<h3 id="w-results">Results (<code>/results</code>)</h3>
+<ul>
+  <li><strong>Choose a shoot</strong> – a custom dropdown showing up to 10 shoots at a time, scrolling for more. The selected shoot is highlighted in gold.</li>
+  <li><strong>Admins</strong> see a red ✕ against each shoot. Click ✕ to mark one or several shoots (struck through in red), then press <em>Delete marked (n)</em> and confirm in the on-page dialog. Deleting removes the shoots and all their results permanently.</li>
+  <li>Results table: one column per stand, total (net total on handicap shoots), average %, place (🥇🥈🥉 for the top three) and CPSA class. Columns sort; <em>Filter shooters</em> searches by name; <em>Share</em> gives a link for the shoot.</li>
+  <li>The page refreshes automatically when new scores arrive, and jumps to a newly started shoot.</li>
+</ul>
+
+<h3 id="w-leaderboard">Leaderboard (<code>/leaderboard</code>)</h3>
+<table>
+  <tr><th>Column</th><th>Meaning</th></tr>
+  <tr><td>Place</td><td>By average %. Tied shooters share a place and show <strong>Joint</strong> before it.</td></tr>
+  <tr><td>Avg %</td><td>Hits as a percentage of targets across the shoots counted.</td></tr>
+  <tr><td>Shoots</td><td>Number of shoots the shooter took part in.</td></tr>
+  <tr><td>Attended %</td><td>Shoots attended ÷ the club's shoots in the last 12 months.</td></tr>
+  <tr><td>Total hits</td><td>Sum of hits.</td></tr>
+  <tr><td>CPSA Class</td><td>See <a href="#rules">scoring rules</a>.</td></tr>
+</table>
+
+<h3 id="w-dashboard">Dashboard (<code>/dashboard</code>)</h3>
+<p>Shoot list with search, sortable columns, select-all and bulk delete (admins). Also shows account status and, for admins, the API key controls.</p>
+
+<h3 id="w-shooters">Shooters (<code>/shooters</code>)</h3>
+<p>The club roster of <strong>members</strong> and <strong>guests</strong>, current or expired.</p>
+<ul>
+  <li><strong>Email</strong> is required for members; optional for guests. Guests without an email receive no results emails.</li>
+  <li><strong>Guest book</strong> – tick "Has signed the guest book" for guests; shown as a column.</li>
+  <li>Names are tidied automatically (capitalised). Members' emails are verified by a link (valid 7 days, resend after 5 minutes).</li>
+  <li>Each club has a paid-for member and guest allowance; adding beyond it is blocked (see <a href="#billing">billing</a>).</li>
+  <li>The app reads the same roster, so shooters added in either place appear in both.</li>
+</ul>
+
+<h3 id="w-social">Social (<code>/social</code>)</h3>
+<p>Connect up to 10 accounts. After a shoot finishes, results are posted automatically. Platforms: Discord, Slack, Telegram, Mastodon, Bluesky, Facebook and X. Credentials are stored encrypted, and each account records the outcome of its last post. A failed post never blocks a results upload.</p>
+
+<h3 id="w-account">Account (<code>/account</code>)</h3>
+<p>Change password, set up two-factor authentication, manage the API key (super admin), see subscription status and billing, and run or restore backups.</p>
+
+<h3 id="w-clubs">Shoot clubs (<code>/admin/clubs</code>) <span class="tag">super admin</span></h3>
+<p>Lists every club account. Open a club to "act as" it (a banner shows <em>Viewing as …</em> with a Return button), set subscription state, and run the renewal reminder sweep on demand.</p>
+
+<h2 id="app">6. iPhone / iPad app</h2>
+
+<h3 id="a-setup">Connecting to the server</h3>
+<p>Open <em>Server settings</em> (toolbar). Enter the server URL (e.g. <code>https://192.168.1.100:3000</code>), the API key from the website and the key fingerprint. A club code connect flow (<code>/api/v1/clubs/lookup</code>, <code>/connect</code>) is also supported. The app shows live sync status, and keeps scores on the device if the server is unreachable, retrying until they are delivered.</p>
+
+<h3 id="a-new">Starting a shoot</h3>
+<p>The <strong>home screen</strong> appears when no shoot is on the scoresheet. It has <em>New Shoot</em> and a <em>Previous shoots</em> menu. If another device already has a current shoot, this device joins it automatically.</p>
+<p><em>New Shoot</em> opens <strong>Who is shooting?</strong>:</p>
+<table>
+  <tr><th>Setting</th><th>Detail</th></tr>
+  <tr><td>Shooters</td><td>Tick members and guests from the roster. Add new people with the roster form (members need an email; guests do not).</td></tr>
+  <tr><td>Stands</td><td>Number of stands in the shoot (1–25), 10 targets each by default.</td></tr>
+  <tr><td>Shooting order</td><td><strong>As entered</strong> (the order ticked – default), <strong>Alphabetic</strong> or <strong>Random</strong>. Applied when the shoot starts.</td></tr>
+  <tr><td>Spoken feedback</td><td><strong>Off</strong>, <strong>Enthusiastic</strong> or <strong>Sarcastic</strong> – the style of remark spoken when a shooter finishes a stand.</td></tr>
+  <tr><td>Announcer voice</td><td>Default (British), or up to five female and five male English voices installed on the device. Picking one plays a sample. Remembered per device.</td></tr>
+  <tr><td>Handicap shoot</td><td>Optional; see <a href="#a-handicap">handicaps</a>.</td></tr>
+</table>
+<p>Press <strong>Start Shoot</strong>. Once started, shooters, stands, order and handicap are locked.</p>
+
+<h3 id="a-scoring">Scoring</h3>
+<ul>
+  <li><strong>Score table</strong> – pinned shooter names with a running total, one cell per target per stand, and a Place column once finished. The <strong>current shooter's name is bold</strong>; the current stand and cell are outlined.</li>
+  <li><strong>Entry methods</strong> – voice (always listening on the score screen), keyboard (hit/miss keys), on-screen Hit/Miss buttons, and tapping a shooter to select them.</li>
+  <li><strong>Stand summary card</strong> – after a shooter finishes a stand, a card shows their score, who is next, and (if one more is possible) "Possible n". Input pauses while it is shown; a tap dismisses a timed card without counting as a Hit or Miss.</li>
+  <li><strong>Auto-locking</strong> – a stand locks when any later stand has scores; the last stand locks after 15 s without edits. Locked stands cannot be changed.</li>
+  <li><strong>Pairs</strong> – score two targets at once ("pair hit", "lost pair").</li>
+  <li><strong>Manual mode</strong> – a mode toggle switches off voice recognition for button-only scoring.</li>
+</ul>
+
+<h3 id="a-voice">Voice control</h3>
+<p>Recognition uses Apple's Speech framework and is matched by <em>sound</em>, not exact spelling (<code>SpeechMatcher.swift</code>), so "it" for "hit" or "Jon" for "John" still works. <strong>Voice listening is only active on the score screen</strong> – it is switched off in the roster, settings and previous-shoot screens, in the background, and while the app is speaking.</p>
+<table>
+  <tr><th>Say</th><th>Effect</th></tr>
+  <tr><td>“hit”</td><td>Scores the next target as a hit.</td></tr>
+  <tr><td>“miss” / “lost”</td><td>Scores the next target as a miss.</td></tr>
+  <tr><td>“pair hit”</td><td>Next two targets are hits.</td></tr>
+  <tr><td>“pair lost” / “lost pair”</td><td>Next two targets are misses.</td></tr>
+  <tr><td>“&lt;name&gt;” or “shooter &lt;name&gt;”</td><td>Switch to that shooter (first or full name).</td></tr>
+  <tr><td>“&lt;name&gt; hit”</td><td>Switch shooter and score in one go.</td></tr>
+  <tr><td>“stand 3”, “next stand”</td><td>Move to a stand.</td></tr>
+  <tr><td>“stand 3 john hit”</td><td>Stand, shooter and score together.</td></tr>
+  <tr><td>“clear shooters”</td><td>Remove every shooter.</td></tr>
+  <tr><td>“clear shooter &lt;name&gt;”</td><td>Remove that shooter.</td></tr>
+  <tr><td>“clear score [&lt;name&gt;] [stand n]”</td><td>Wipe scores for the current/named shooter, all stands or one.</td></tr>
+  <tr><td>Add Shooters mode: “&lt;name&gt;, pause, &lt;name&gt;…”</td><td>Say each name with a pause between; press Finish.</td></tr>
+</table>
+<p>"Clear" commands run about a second after you stop speaking, so pause briefly after one. The in-app help (<em>?</em> button) lists the same commands.</p>
+
+<h3 id="a-speech">Spoken announcements</h3>
+<ul>
+  <li><strong>Voice</strong> – chosen in setup; default is the best British voice installed. For the best quality download an Enhanced/Premium voice under <em>Settings → Accessibility → Spoken Content → Voices</em>.</li>
+  <li><strong>Hit / Miss</strong> are spoken for keyboard and button entries (not voice entries, to avoid echo).</li>
+  <li><strong>End of stand</strong> – the shooter's score and who is next; with a feedback style selected, a remark based on the score band (perfect, ≥90%, ≥70%, ≥50%, below). Three phrases per band per style, chosen at random.</li>
+  <li><strong>Final results</strong> – spoken when the shoot finishes, best first, one utterance per place so nothing is cut off. A tie is grouped: <em>“Joint 1st, Alan, Bob and Chris, with 40.”</em> On handicap shoots scores are net.</li>
+  <li>The microphone is paused while the app speaks and resumes afterwards.</li>
+</ul>
+
+<h3 id="a-handicap">Handicap shoots</h3>
+<ol>
+  <li>Switch on <em>Handicap shoot</em> in setup and choose <em>Average taken over</em>: All time, Last year (default), Last 3 months, Last 1 month, Last 6 shoots, Last 3 shoots (the "last N shoots" options use each shooter's own most recent N shoots).</li>
+  <li>On Start Shoot the app fetches each shooter's average score per stand from the server.</li>
+  <li><strong>Handicap = floor(average per stand × number of stands)</strong>, a whole number. <strong>Net total = total − handicap.</strong></li>
+  <li>Net totals drive places everywhere (app, website, emails, speech).</li>
+</ol>
+<div class="note">The averages include earlier handicap shoots. The chosen period is not shared between devices; the handicap values themselves are uploaded and shared.</div>
+
+<h3 id="a-sync">Multi-device sync</h3>
+<ul>
+  <li>A club has <strong>one current shoot</strong> (the newest unfinished one). Every device shows it.</li>
+  <li>Devices upload changes immediately and poll the server every 2 seconds, merging in stands scored elsewhere.</li>
+  <li>Each device only writes the stands it owns (<code>ownedStands</code>); remote stands are merged in without overwriting local unsent edits.</li>
+  <li>A blank device picks up a shoot another device started. A device in the middle of setup (roster sheet open or adding shooters) is <em>not</em> pulled away. A device with unsent changes is not overwritten.</li>
+  <li>An offline outbox stores the latest full scoresheet and retries until delivered.</li>
+  <li>If another device finishes the shoot, this device shows the locked final results too.</li>
+</ul>
+
+<h3 id="a-finish">Finishing a shoot</h3>
+<p><em>Complete</em> means every target is scored; <em>Finished</em> means complete and every stand locked. On finishing: final results are announced, the shoot is uploaded as complete, shooters with an email are sent their results, and social accounts are posted to. The toolbar offers <em>Submit results, then new shoot</em>, Excel export and <em>New Shoot</em> (with confirmation).</p>
+
+<h3 id="a-history">Previous shoots</h3>
+<p>The home screen's <em>Previous shoots</em> menu lists finished shoots (newest first, up to 60). Selecting one opens a read-only results sheet with per-stand scores, totals (net if handicap) and places.</p>
+
+<h2 id="rules">7. Scoring rules &amp; calculations</h2>
+<table>
+  <tr><th>Item</th><th>Rule</th></tr>
+  <tr><td>Score</td><td>Hit = 1, miss = 0 per target. Stand total = hits on the stand. Grand total = sum of stands.</td></tr>
+  <tr><td>Average %</td><td>100 × hits ÷ targets shot.</td></tr>
+  <tr><td>Net total</td><td>Grand total − handicap (handicap shoots only).</td></tr>
+  <tr><td>Place (shoot)</td><td>Ranked by net total; equal totals share a place (1, 1, 3 …) – announced as "Joint".</td></tr>
+  <tr><td>Place (leaderboard)</td><td>Ranked by average %; ties shown as "Joint".</td></tr>
+  <tr><td>Attended %</td><td>Shoots attended by the shooter ÷ club shoots in the last 12 months.</td></tr>
+  <tr><td>Handicap</td><td>floor(average score per stand over the chosen period × stands).</td></tr>
+</table>
+<h3>CPSA classes</h3>
+<p>Based on the last 12 months' average % (or all-time if there are none).</p>
+<table>
+  <tr><th>Class</th><th>Minimum average</th></tr>
+  <tr><td>AAA 👑</td><td>92%</td></tr><tr><td>AA 🏆</td><td>85%</td></tr><tr><td>A ⭐</td><td>77%</td></tr>
+  <tr><td>B 🎯</td><td>68%</td></tr><tr><td>C 🔹</td><td>55%</td></tr><tr><td>D 🌱</td><td>below 55%</td></tr>
+</table>
+
+<h2 id="api">8. API reference</h2>
+<p>All <code>/api/v1</code> calls use HTTPS and <code>Authorization: Bearer &lt;API key&gt;</code> (except the club lookup/connect calls). Bodies are JSON. Requests are rate-limited.</p>
+<table>
+  <tr><th>Method &amp; path</th><th>Purpose</th></tr>
+  <tr><td><code>POST /api/v1/clubs/lookup</code>, <code>/connect</code></td><td>Find a club and obtain connection details.</td></tr>
+  <tr><td><code>GET /api/v1/ping</code></td><td>Check the key and server are reachable.</td></tr>
+  <tr><td><code>GET /api/v1/shooters</code></td><td>The club roster (members and guests).</td></tr>
+  <tr><td><code>POST /api/v1/shooters</code></td><td>Add a roster shooter (name, email, kind, guest-book flag).</td></tr>
+  <tr><td><code>POST /api/v1/shoots</code></td><td>Upload/update a shoot (upsert by <code>externalId</code>): name, venue, date, stands, targets, shooter scores, locked stands, handicap flag and values, <code>complete</code>. <code>complete:false</code> suppresses emails and social posts.</td></tr>
+  <tr><td><code>GET /api/v1/shoots/current</code></td><td>The club's current (unfinished) shoot, plus the requested shoot's state.</td></tr>
+  <tr><td><code>GET /api/v1/shoots/history</code></td><td>Finished shoots, newest first (limit 60).</td></tr>
+  <tr><td><code>GET /api/v1/shoots/history/:externalId</code></td><td>One finished shoot: per-shooter stand scores, net, place.</td></tr>
+  <tr><td><code>GET /api/v1/handicaps?period=…</code></td><td>Each shooter's average score per stand for the period.</td></tr>
+</table>
+<h3>Website routes (session login)</h3>
+<table>
+  <tr><th>Route</th><th>Purpose</th></tr>
+  <tr><td><code>/register</code>, <code>/login</code>, <code>/logout</code>, <code>/2fa/*</code>, <code>/verify-email/:token</code></td><td>Sign-up, sign-in, two-factor and email verification.</td></tr>
+  <tr><td><code>/dashboard</code>, <code>/results</code>, <code>/leaderboard</code>, <code>/shoots/:token</code>, <code>/live</code></td><td>Views; <code>/live</code> is polled for changes.</td></tr>
+  <tr><td><code>POST /shoots/:token/delete</code>, <code>/shoots/delete-selected</code></td><td>Delete shoots – <strong>admins only</strong>.</td></tr>
+  <tr><td><code>/shooters</code>, <code>/shooters/roster/*</code></td><td>Roster management.</td></tr>
+  <tr><td><code>/social</code>, <code>/billing</code>, <code>/webhook/*</code></td><td>Social accounts, payments, provider webhooks.</td></tr>
+  <tr><td><code>/account</code>, <code>/settings/api-key</code>, <code>/account/backups/*</code></td><td>Account, API key, backups.</td></tr>
+  <tr><td><code>/admin/clubs</code>, <code>/admin/reminders/run</code>, <code>/admin/return</code></td><td>Super-admin tools.</td></tr>
+</table>
+
+<h2 id="data">9. Data model</h2>
+<table>
+  <tr><th>Table</th><th>Holds</th></tr>
+  <tr><td><code>users</code></td><td>Club accounts: email, club name, password hash, 2FA secret, API key hash, subscription state, allowances.</td></tr>
+  <tr><td><code>shoots</code></td><td>One row per shoot: external id, name, venue, date, stands, targets per stand, handicap flag, completion/notification flags, JSON <code>locked_stands</code>.</td></tr>
+  <tr><td><code>results</code></td><td>Score per (shoot, shooter, stand), plus a hit/miss <code>pattern</code>.</td></tr>
+  <tr><td><code>shoot_handicaps</code></td><td>Handicap per (shoot, shooter).</td></tr>
+  <tr><td><code>roster</code></td><td>Members/guests per club: name, email, kind, status (current/expired), admin flag, guest-book flag.</td></tr>
+  <tr><td><code>shooter_emails</code></td><td>Email addresses and last send outcome for results emails.</td></tr>
+  <tr><td><code>social_accounts</code></td><td>Connected social accounts (encrypted config, last status).</td></tr>
+  <tr><td><code>payments</code>, <code>pay_links</code></td><td>Payment records and provider references.</td></tr>
+  <tr><td><code>reminder_log</code></td><td>Renewal reminders sent.</td></tr>
+  <tr><td><code>sessions</code></td><td>Login sessions (excluded from backups).</td></tr>
+</table>
+
+<h2 id="notifications">10. Email, social &amp; reminders</h2>
+<ul>
+  <li><strong>Results email</strong> – on completion each shooter with a verified address gets their own results (stand scores, total, place with medal, class). At most 50 per shoot; outcomes are logged. Guests without an email are skipped.</li>
+  <li><strong>Social posts</strong> – a results summary posted to each enabled account once per completed shoot.</li>
+  <li><strong>Renewal reminders</strong> – a sweep every 6 hours emails clubs 30, 14, 7 and 1 days before the subscription ends, when it lapses, and a week later (stops after 60 days). Each reminder is sent once per subscription period.</li>
+  <li>Incomplete uploads (<code>complete:false</code>) never trigger emails or posts.</li>
+</ul>
+
+<h2 id="billing">11. Billing &amp; allowances</h2>
+<ul>
+  <li>Pricing is <strong>per head per year</strong>: £1 per member, 50p per guest. A club buys an allowance of members and guests; the roster cannot exceed it. Increase/decrease requests are held until paid.</li>
+  <li>Providers: Stripe (cards, Apple/Google Pay), PayPal, GoCardless (Direct Debit), Square, Mollie. Return pages verify with the provider, so a first payment works even if webhooks cannot reach the server. A 3-day grace period applies.</li>
+  <li>With no provider configured, every account has full access. The super admin and older accounts have no limit.</li>
+</ul>
+
+<h2 id="security">12. Security</h2>
+<ul>
+  <li>HTTPS only; self-signed certificates are protected by public-key pinning in the app.</li>
+  <li>Strict Content-Security-Policy (helmet): <strong>inline scripts are blocked</strong>, so page scripts live in <code>public/*.js</code>.</li>
+  <li>CSRF token on every website POST; rate limits on login, API, upload and polling.</li>
+  <li>Passwords hashed with bcrypt; optional TOTP two-factor; API keys stored hashed; 2FA and social secrets encrypted with <code>APP_ENCRYPTION_KEY</code>.</li>
+  <li>Role checks enforced on the server (delete is admin-only; super-admin routes guarded).</li>
+  <li>Social webhook targets are validated against private/internal addresses.</li>
+</ul>
+
+<h2 id="backup">13. Backup &amp; restore</h2>
+<ul>
+  <li>A daily JSON backup of every table (except sessions) is written to the backup folder; 30 daily copies are kept.</li>
+  <li>Restoring first takes a <em>prerestore</em> safety copy (10 kept). Run or restore from <em>Account → Backups</em> (super admin).</li>
+  <li>For a manual copy, stop the server and copy <code>data/app.db</code> (and the <code>data/tls</code> folder to keep the same fingerprint).</li>
+</ul>
+
+<h2 id="ops">14. Operations</h2>
+<h3>Restarting the server</h3>
+<pre><code>kill $(lsof -tiTCP:3000 -sTCP:LISTEN)
+nohup npm start > /tmp/clay-server.log 2>&1 &
+tail /tmp/clay-server.log</code></pre>
+<p>Static files in <code>public/</code> need no restart – just refresh the browser (Cmd+Shift+R). Server code, routes and views (EJS caching in production) need a restart.</p>
+<h3>Helper scripts</h3>
+<ul><li><code>scripts/seed-west-peckham.js</code>, <code>scripts/seed-test-clubs.js</code> – seed example clubs/data for testing.</li></ul>
+<h3>Version control</h3>
+<p>Git repository with remotes <code>origin</code> (ClayShootScores) and <code>CliveTalbutt</code> (ClayClubsShoots). A tag <code>good-point-1</code> marks the first stable point. Pushing needs GitHub credentials (personal access token or GitHub Desktop): <code>git push CliveTalbutt main --tags</code>.</p>
+
+<h2 id="troubleshooting">15. Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Check</th></tr>
+  <tr><td>App cannot connect</td><td>Server running? Same network? URL uses <code>https://</code>? Fingerprint matches the one printed at start-up (it changes if <code>data/tls</code> was deleted)?</td></tr>
+  <tr><td>"API key rejected"</td><td>Regenerate the key on the website and re-enter it on every device.</td></tr>
+  <tr><td>Scores not on the website</td><td>Look for "saved on this phone, retrying" in the app; the outbox sends once the server is reachable.</td></tr>
+  <tr><td>New Shoot does nothing / roster closes</td><td>Another device has a current shoot. Finish or delete it; the app joins the current shoot when blank. Update all devices to the latest build.</td></tr>
+  <tr><td>Voice not responding</td><td>Only active on the score screen. Check microphone and speech permissions; it pauses while the app is speaking and resumes automatically. Manual mode turns it off.</td></tr>
+  <tr><td>Wrong or robotic voice</td><td>Download an Enhanced/Premium voice in iOS settings, then pick it under <em>Announcer voice</em>.</td></tr>
+  <tr><td>Extra or stray shoot on the website</td><td>A device may have re-uploaded an old shoot; delete it from Results (admin).</td></tr>
+  <tr><td>Page change not visible</td><td>Hard refresh; restart the server for server-side changes.</td></tr>
+  <tr><td>No emails</td><td>SMTP variables set? Shooter has a verified address? The shoot completed (not a live upload)?</td></tr>
+</table>
+
+<h2 id="files">16. File map</h2>
+<h3>Server &amp; website</h3>
+<table>
+  <tr><td><code>src/server.js</code></td><td>Express app, routes, API, auth, calculations.</td></tr>
+  <tr><td><code>src/db.js</code></td><td>Schema and migrations.</td></tr>
+  <tr><td><code>src/roster.js</code></td><td>Roster routes and verification emails.</td></tr>
+  <tr><td><code>src/mailer.js</code>, <code>src/social.js</code>, <code>src/reminders.js</code></td><td>Results email, social posters, renewal reminders.</td></tr>
+  <tr><td><code>src/payments.js</code>, <code>src/allowance.js</code></td><td>Payment providers; per-head allowance and pricing.</td></tr>
+  <tr><td><code>src/backup.js</code>, <code>src/tls.js</code></td><td>Backups; TLS and fingerprint.</td></tr>
+  <tr><td><code>views/*.ejs</code></td><td>Pages; <code>views/partials</code> holds header/footer.</td></tr>
+  <tr><td><code>public/*.js</code>, <code>style.css</code></td><td>Browser scripts (results, live refresh, shoot picker, bulk select, roster editing…) and styles.</td></tr>
+</table>
+<h3>iOS app (<code>ios/ClayShootScoreApp</code>)</h3>
+<table>
+  <tr><td><code>ShootViewModel.swift</code></td><td>Core state: scoring, voice commands, handicaps, feedback, speech, sync merging.</td></tr>
+  <tr><td><code>ContentView.swift</code></td><td>Main screen, home view, toolbar, sheets, polling and outbox.</td></tr>
+  <tr><td><code>RosterView.swift</code></td><td>Shoot setup (shooters and options).</td></tr>
+  <tr><td><code>ScoreTableView.swift</code></td><td>Score table and place column.</td></tr>
+  <tr><td><code>ClayShootsClient.swift</code></td><td>HTTPS client, models and pinning.</td></tr>
+  <tr><td><code>SpeechMatcher.swift</code></td><td>Sound-alike matching for commands and names.</td></tr>
+  <tr><td><code>PastShootsView.swift</code>, <code>SendToServerView.swift</code>, <code>VoiceCommandsHelpView.swift</code></td><td>Previous results, server settings, command help.</td></tr>
+  <tr><td><code>ResultsExporter.swift</code>, <code>Shooter.swift</code>, <code>HoldScoreButton.swift</code></td><td>Excel export and ordinals/medals, shooter model, score button.</td></tr>
+</table>
+
+<h2 id="limits">17. Known limitations</h2>
+<ul>
+  <li>The handicap period and shooting-order choices are not stored on the server or shared between devices.</li>
+  <li>Handicap averages include earlier handicap shoots.</li>
+  <li>Net = total − handicap is the implemented interpretation.</li>
+  <li>The microphone may occasionally hear the app's own speech.</li>
+  <li>Several recent features (sync fixes, voice gating, voice picker, joint announcements, new-shoot fix on iPhone) were built and installed but not fully tested on devices.</li>
+  <li>Joint wording is applied to the leaderboard and spoken results, not to the on-screen result tables.</li>
+  <li>The code has not yet been pushed to GitHub (credentials needed).</li>
+</ul>
+
+<footer>Clay Shoots documentation · generated from the repository state at commit <code>f959c8c</code>.</footer>
+</main>
+</div>
+</body>
+</html>
