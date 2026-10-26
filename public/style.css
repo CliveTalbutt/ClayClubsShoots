@@ -119,3 +119,7 @@ footer{text-align:center;color:var(--muted);padding:24px}
 .club-dialog-head .btn{background:#111827;color:#fff;border:1px solid #111827;font-weight:600;padding:.45rem 1.1rem;opacity:1}
 .club-dialog-head .btn:hover{background:#f59e0b;border-color:#f59e0b;color:#111}
 .nav-shoot{color:var(--text,#e8eef2);font-weight:600;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+/* Same yellow flash as the phone app: held briefly, then eased out. */
+@keyframes value-flash{0%,64%{background:rgba(250,204,21,.8);color:#111}100%{background:transparent}}
+.value-flash{animation:value-flash .55s ease-out}
+@media (prefers-reduced-motion:reduce){.value-flash{animation:none}}

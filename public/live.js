@@ -33,7 +33,10 @@ if (watched.some((p) => location.pathname.startsWith(p))) {
       else if (v !== last) {
         last = v;
         await refreshDropdown();
-        if (!busy() && document.activeElement?.tagName !== 'SELECT') location.reload();
+        if (!busy() && document.activeElement?.tagName !== 'SELECT') {
+          sessionStorage.setItem('liveReload', '1');
+          location.reload();
+        }
       }
     } catch { /* offline or restarting: try again next time */ }
   };
